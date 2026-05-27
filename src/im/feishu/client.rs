@@ -130,19 +130,9 @@ struct RawFeishuMessage {
 
 #[derive(Debug, Deserialize)]
 struct RawMention {
-    #[serde(default)]
-    id: RawMentionId,
     /// "bot" 表示 @机器人，"user" 表示 @普通用户
     #[serde(default)]
     mentioned_type: Option<String>,
-}
-
-#[derive(Debug, Deserialize, Default)]
-struct RawMentionId {
-    #[serde(default)]
-    user_id: Option<String>,
-    #[serde(default)]
-    open_id: Option<String>,
 }
 
 /// tenant_access_token 缓存，到期前自动刷新
