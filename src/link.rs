@@ -316,7 +316,17 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
             } else if is_actionable {
                 "..."
             } else {
-                "收到，请继续输入指令"
+                // 非 actionable 消息（图片/文件等）：存入 chat 级别的 pending，等待后续文字指令
+                if let Some(att) = pending_attachment_from(&msg) {
+                    state
+                        .pending_attachments
+                        .write()
+                        .await
+                        .entry(format!("chat:{}", msg.chat_id))
+                        .or_default()
+                        .push(att);
+                }
+                "收到附件，请回复文字指令来处理它"
             };
             match state.channel.reply_message(&msg.message_id, hint).await {
                 Ok((reply_msg_id, thread_id)) => {
@@ -546,15 +556,27 @@ async fn prepare_prompt(
                 .await
                 .remove(thread_id)
                 .unwrap_or_default();
-            if !pending.is_empty() {
+            // 同时检查 chat 级别的 pending（用户在顶层发图片，然后在 thread 内发文字的场景）
+            let chat_pending_key = format!("chat:{}", chat_id);
+            let chat_pending = state
+                .pending_attachments
+                .write()
+                .await
+                .remove(&chat_pending_key)
+                .unwrap_or_default();
+            let all_pending: Vec<PendingAttachment> = pending
+                .into_iter()
+                .chain(chat_pending.into_iter())
+                .collect();
+            if !all_pending.is_empty() {
                 tracing::info!(
                     "增量模式附带 {} 个待处理附件: thread={thread_id}",
-                    pending.len()
+                    all_pending.len()
                 );
             }
-            let mut blocks: Vec<ContentBlock> = Vec::with_capacity(pending.len() + 1);
+            let mut blocks: Vec<ContentBlock> = Vec::with_capacity(all_pending.len() + 1);
             blocks.push(AcpBridge::text_block(&context));
-            append_attachment_blocks(state, &pending, &mut blocks).await?;
+            append_attachment_blocks(state, &all_pending, &mut blocks).await?;
             Ok((session_id, blocks))
         }
         None => {
@@ -609,6 +631,22 @@ async fn prepare_prompt(
 
             for link in &submission.links {
                 blocks.push(AcpBridge::text_block(link));
+            }
+
+            // 检查 chat 级别的 pending 附件（用户在顶层发图片后直接发文字的场景）
+            let chat_pending_key = format!("chat:{}", chat_id);
+            let chat_pending = state
+                .pending_attachments
+                .write()
+                .await
+                .remove(&chat_pending_key)
+                .unwrap_or_default();
+            if !chat_pending.is_empty() {
+                tracing::info!(
+                    "全量聚合附带 {} 个 chat 级别待处理附件: chat_id={chat_id}",
+                    chat_pending.len()
+                );
+                append_attachment_blocks(state, &chat_pending, &mut blocks).await?;
             }
 
             // 在最前面注入 im_context，供 agent 提取 message_id
