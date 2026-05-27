@@ -491,10 +491,12 @@ impl FeishuClient {
                             None => continue,
                         },
                         "post" => {
-                            tracing::debug!("飞书 WS: 不支持的消息类型 'post'");
-                            MessageContent::Unsupported {
-                                message_type: "post".to_string(),
-                                raw_content: raw_msg.content.clone(),
+                            match parse_post_content(&raw_msg.content) {
+                                Some(content) => content,
+                                None => {
+                                    tracing::debug!("飞书 WS: post 消息无有效内容，跳过");
+                                    continue;
+                                }
                             }
                         }
                         "image"   => parse_image_content(&raw_msg.content),
@@ -992,6 +994,22 @@ impl FeishuClient {
                         });
                     }
                 }
+                "post" => {
+                    let (post_texts, post_images) = parse_post_content_all(content_str);
+                    for t in post_texts {
+                        if is_feishu_link(&t) {
+                            links.push(t);
+                        } else {
+                            texts.push(t);
+                        }
+                    }
+                    for image_key in post_images {
+                        images.push(ImageItem {
+                            message_id: message_id.clone(),
+                            image_key,
+                        });
+                    }
+                }
                 _ => {}
             }
         }
@@ -1265,6 +1283,143 @@ fn parse_image_content(content: &str) -> MessageContent {
     MessageContent::Image {
         image_key: v["image_key"].as_str().unwrap_or("").to_string(),
     }
+}
+
+/// 解析 post（富文本）消息，提取第一张图片或合并文字
+///
+/// 飞书 post 消息结构：
+/// ```json
+/// {"title": "...", "content": [[{"tag": "text", "text": "..."}, {"tag": "img", "image_key": "..."}]]}
+/// ```
+///
+/// 优先提取图片（返回 `Image`），无图片时合并文字（返回 `Text`），
+/// 都没有则返回 `None`。
+fn parse_post_content(content: &str) -> Option<MessageContent> {
+    let v: serde_json::Value = serde_json::from_str(content).unwrap_or_default();
+
+    // post 的 content 可能在顶层或 zh_cn/en_us 等语言 key 下
+    let post_body = if v.get("content").is_some() && v["content"].is_array() {
+        &v
+    } else {
+        // 尝试 zh_cn / en_us 等语言 key
+        v.as_object()
+            .and_then(|obj| {
+                obj.values().find(|val| {
+                    val.get("content").is_some_and(|c| c.is_array())
+                })
+            })
+            .unwrap_or(&v)
+    };
+
+    let paragraphs = post_body["content"].as_array()?;
+
+    let mut first_image_key: Option<String> = None;
+    let mut text_parts: Vec<String> = Vec::new();
+
+    for paragraph in paragraphs {
+        let elements = match paragraph.as_array() {
+            Some(arr) => arr,
+            None => continue,
+        };
+        for elem in elements {
+            let tag = elem["tag"].as_str().unwrap_or("");
+            match tag {
+                "img" => {
+                    if first_image_key.is_none() {
+                        let key = elem["image_key"].as_str().unwrap_or("").to_string();
+                        if !key.is_empty() {
+                            first_image_key = Some(key);
+                        }
+                    }
+                }
+                "text" => {
+                    let t = elem["text"].as_str().unwrap_or("").trim().to_string();
+                    if !t.is_empty() {
+                        text_parts.push(t);
+                    }
+                }
+                "a" => {
+                    // 超链接
+                    let href = elem["href"].as_str().unwrap_or("");
+                    let link_text = elem["text"].as_str().unwrap_or("");
+                    if !href.is_empty() {
+                        text_parts.push(format!("{link_text} {href}"));
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    // 优先返回图片
+    if let Some(image_key) = first_image_key {
+        return Some(MessageContent::Image { image_key });
+    }
+
+    // 无图片时返回合并文字
+    if !text_parts.is_empty() {
+        let merged = text_parts.join("\n");
+        return Some(MessageContent::Text(merged));
+    }
+
+    None
+}
+
+/// 解析 post（富文本）消息中的所有图片和文字，用于 aggregate_thread 全量聚合
+///
+/// 返回 (texts, image_keys) 元组
+fn parse_post_content_all(content: &str) -> (Vec<String>, Vec<String>) {
+    let v: serde_json::Value = serde_json::from_str(content).unwrap_or_default();
+
+    let post_body = if v.get("content").is_some() && v["content"].is_array() {
+        &v
+    } else {
+        v.as_object()
+            .and_then(|obj| {
+                obj.values().find(|val| {
+                    val.get("content").is_some_and(|c| c.is_array())
+                })
+            })
+            .unwrap_or(&v)
+    };
+
+    let mut texts: Vec<String> = Vec::new();
+    let mut image_keys: Vec<String> = Vec::new();
+
+    if let Some(paragraphs) = post_body["content"].as_array() {
+        for paragraph in paragraphs {
+            let elements = match paragraph.as_array() {
+                Some(arr) => arr,
+                None => continue,
+            };
+            for elem in elements {
+                let tag = elem["tag"].as_str().unwrap_or("");
+                match tag {
+                    "img" => {
+                        let key = elem["image_key"].as_str().unwrap_or("").to_string();
+                        if !key.is_empty() {
+                            image_keys.push(key);
+                        }
+                    }
+                    "text" => {
+                        let t = elem["text"].as_str().unwrap_or("").trim().to_string();
+                        if !t.is_empty() {
+                            texts.push(t);
+                        }
+                    }
+                    "a" => {
+                        let href = elem["href"].as_str().unwrap_or("");
+                        if !href.is_empty() {
+                            texts.push(href.to_string());
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    (texts, image_keys)
 }
 
 /// 解析文件消息 JSON：`{"file_key": "...", "file_name": "...", "file_size": N}`
