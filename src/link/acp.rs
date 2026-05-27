@@ -144,7 +144,7 @@ async fn acp_event_loop(
 
     let mut child = tokio::process::Command::new(&config.cmd)
         .args(&config.args)
-        .current_dir(crate::config::AppConfig::temp_dir())
+        .current_dir(config.effective_cwd())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::inherit())
@@ -399,7 +399,7 @@ impl AcpBridge {
     /// worker 崩溃时自动重启，最多连续重试 3 次。
     fn spawn_keepalive(&self) -> Result<()> {
         let config = self.config.clone();
-        let temp_dir = crate::config::AppConfig::temp_dir();
+        let temp_dir = config.effective_cwd();
 
         tokio::spawn(async move {
             let mut tx = None::<mpsc::Sender<AcpCommand>>;
