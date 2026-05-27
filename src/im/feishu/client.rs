@@ -132,13 +132,17 @@ struct RawFeishuMessage {
 struct RawMention {
     #[serde(default)]
     id: RawMentionId,
+    /// "bot" 表示 @机器人，"user" 表示 @普通用户
+    #[serde(default)]
+    mentioned_type: Option<String>,
 }
 
 #[derive(Debug, Deserialize, Default)]
 struct RawMentionId {
-    /// bot mention 没有 user_id，普通用户有
     #[serde(default)]
     user_id: Option<String>,
+    #[serde(default)]
+    open_id: Option<String>,
 }
 
 /// tenant_access_token 缓存，到期前自动刷新
@@ -259,6 +263,9 @@ pub struct FileItem {
 ///     }
 /// }
 /// ```
+/// 群聊免 @ 窗口时长（用户 @bot 后，同一话题内 5 分钟内不用再 @）
+const AT_BOT_GRACE_WINDOW: Duration = Duration::from_secs(5 * 60);
+
 #[derive(Clone)]
 pub struct FeishuClient {
     app_id: String,
@@ -269,6 +276,8 @@ pub struct FeishuClient {
     tenant_token: Arc<RwLock<Option<CachedToken>>>,
     /// 消息 ID 去重窗口（防止 WS 重连后重复处理）
     seen_ids: Arc<RwLock<HashMap<String, Instant>>>,
+    /// 群聊免 @ 活跃窗口：key = "chat_id:sender_id"，value = 最后活跃时间
+    at_bot_grace: Arc<RwLock<HashMap<String, Instant>>>,
 }
 
 impl FeishuClient {
@@ -280,6 +289,7 @@ impl FeishuClient {
             http: reqwest::Client::new(),
             tenant_token: Arc::new(RwLock::new(None)),
             seen_ids: Arc::new(RwLock::new(HashMap::new())),
+            at_bot_grace: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -465,15 +475,63 @@ impl FeishuClient {
                         seen.insert(raw_msg.message_id.clone(), now);
                     }
 
-                    // 群聊须 @机器人（bot mention 无 user_id）
-                    if raw_msg.chat_type == "group"
-                        && !raw_msg.mentions.iter().any(|m| m.id.user_id.is_none())
-                    {
-                        tracing::debug!(
-                            "飞书 WS: 群聊消息未@机器人，跳过 {}",
-                            raw_msg.message_id
-                        );
-                        continue;
+                    // 群聊 @bot 检查 + 话题内免 @ 窗口
+                    let mentioned_bot = raw_msg.mentions.iter().any(|m| {
+                        m.mentioned_type.as_deref() == Some("bot")
+                    });
+                    let in_thread = raw_msg.root_id.as_ref().is_some_and(|s| !s.is_empty());
+                    // @其他人：文本中有 @_user_ 占位符但没 @bot
+                    let mentioned_others = raw_msg.content.contains("@_user_") && !mentioned_bot;
+
+                    tracing::debug!(
+                        "飞书 WS: 消息 {} chat_type={}, mentions={}, mentioned_bot={}, mentioned_others={}, in_thread={}",
+                        raw_msg.message_id,
+                        raw_msg.chat_type,
+                        raw_msg.mentions.len(),
+                        mentioned_bot,
+                        mentioned_others,
+                        in_thread,
+                    );
+
+                    if raw_msg.chat_type == "group" {
+                        let grace_key = format!("{}:{}", raw_msg.chat_id, sender_open_id);
+
+                        if mentioned_bot {
+                            // @bot 了，记录/刷新活跃窗口
+                            self.at_bot_grace.write().await.insert(grace_key, Instant::now());
+                        } else if mentioned_others {
+                            // @了其他人但没 @bot，跳过并清除活跃窗口
+                            self.at_bot_grace.write().await.remove(&grace_key);
+                            tracing::debug!(
+                                "飞书 WS: @了其他人未@bot，清除活跃窗口，跳过 {}",
+                                raw_msg.message_id
+                            );
+                            continue;
+                        } else if in_thread {
+                            // 话题内未 @任何人，检查是否在活跃窗口内
+                            let in_grace = {
+                                let mut grace = self.at_bot_grace.write().await;
+                                let now = Instant::now();
+                                grace.retain(|_, t| now.duration_since(*t) < AT_BOT_GRACE_WINDOW);
+                                grace.contains_key(&grace_key)
+                            };
+                            if !in_grace {
+                                tracing::debug!(
+                                    "飞书 WS: 话题内消息不在活跃窗口，跳过 {}",
+                                    raw_msg.message_id
+                                );
+                                continue;
+                            }
+                            // 在活跃窗口内，刷新时间
+                            self.at_bot_grace.write().await.insert(grace_key, Instant::now());
+                        } else {
+                            // 群顶层消息未 @bot，跳过
+                            tracing::debug!(
+                                "飞书 WS: 群聊顶层消息未@bot，跳过 {}",
+                                raw_msg.message_id
+                            );
+                            continue;
+                        }
                     }
 
                     let content = match raw_msg.message_type.as_str() {
