@@ -130,6 +130,12 @@ struct RawFeishuMessage {
 
 #[derive(Debug, Deserialize)]
 struct RawMention {
+    /// 占位符 key，如 "@_user_1"
+    #[serde(default)]
+    key: String,
+    /// 被 @ 的人的显示名
+    #[serde(default)]
+    name: String,
     /// "bot" 表示 @机器人，"user" 表示 @普通用户
     #[serde(default)]
     mentioned_type: Option<String>,
@@ -441,10 +447,18 @@ impl FeishuClient {
                         continue;
                     }
 
-                    let recv: MsgReceivePayload = match serde_json::from_value(event.event) {
+                    let recv: MsgReceivePayload = match serde_json::from_value(event.event.clone()) {
                         Ok(r) => r,
                         Err(e) => { tracing::error!("飞书 WS: 消息体解析失败: {e}"); continue; }
                     };
+
+                    // 打印原始事件数据，用于调试 mentions 等字段
+                    tracing::debug!(
+                        "飞书 WS: 原始事件 message_id={}, content={}, mentions={:?}",
+                        recv.message.message_id,
+                        recv.message.content,
+                        event.event.pointer("/message/mentions"),
+                    );
 
                     if matches!(recv.sender.sender_type.as_str(), "app" | "bot") {
                         continue;
@@ -470,12 +484,16 @@ impl FeishuClient {
                         m.mentioned_type.as_deref() == Some("bot")
                     });
                     let in_thread = raw_msg.root_id.as_ref().is_some_and(|s| !s.is_empty());
-                    // @其他人：文本中有 @_user_ 占位符但没 @bot
-                    let mentioned_others = raw_msg.content.contains("@_user_") && !mentioned_bot;
+                    // @其他人：独立判断，跟 mentioned_bot 无关
+                    let mentioned_others = raw_msg.mentions.iter().any(|m| {
+                        m.mentioned_type.as_deref() != Some("bot")
+                            && m.mentioned_type.is_some()
+                    });
 
-                    tracing::debug!(
-                        "飞书 WS: 消息 {} chat_type={}, mentions={}, mentioned_bot={}, mentioned_others={}, in_thread={}",
+                    tracing::info!(
+                        "飞书 WS: 消息 {} sender={}, chat_type={}, mentions={}, mentioned_bot={}, mentioned_others={}, in_thread={}",
                         raw_msg.message_id,
+                        sender_open_id,
                         raw_msg.chat_type,
                         raw_msg.mentions.len(),
                         mentioned_bot,
@@ -487,12 +505,13 @@ impl FeishuClient {
                         let grace_key = format!("{}:{}", raw_msg.chat_id, sender_open_id);
 
                         if mentioned_bot {
-                            // @bot 了，记录/刷新活跃窗口
+                            // @bot（不管是否同时 @其他人），通过，记录/刷新活跃窗口
+                            tracing::info!("飞书 WS: @bot，设置活跃窗口 key={}", grace_key);
                             self.at_bot_grace.write().await.insert(grace_key, Instant::now());
                         } else if mentioned_others {
-                            // @了其他人但没 @bot，跳过并清除活跃窗口
+                            // 只 @了其他人没 @bot，跳过并清除活跃窗口
                             self.at_bot_grace.write().await.remove(&grace_key);
-                            tracing::debug!(
+                            tracing::info!(
                                 "飞书 WS: @了其他人未@bot，清除活跃窗口，跳过 {}",
                                 raw_msg.message_id
                             );
@@ -503,20 +522,23 @@ impl FeishuClient {
                                 let mut grace = self.at_bot_grace.write().await;
                                 let now = Instant::now();
                                 grace.retain(|_, t| now.duration_since(*t) < AT_BOT_GRACE_WINDOW);
+                                let keys: Vec<_> = grace.keys().cloned().collect();
+                                tracing::info!("飞书 WS: 检查活跃窗口 key={}, 当前窗口={:?}", grace_key, keys);
                                 grace.contains_key(&grace_key)
                             };
                             if !in_grace {
-                                tracing::debug!(
+                                tracing::info!(
                                     "飞书 WS: 话题内消息不在活跃窗口，跳过 {}",
                                     raw_msg.message_id
                                 );
                                 continue;
                             }
                             // 在活跃窗口内，刷新时间
+                            tracing::info!("飞书 WS: 免@通过，刷新窗口 key={}", grace_key);
                             self.at_bot_grace.write().await.insert(grace_key, Instant::now());
                         } else {
                             // 群顶层消息未 @bot，跳过
-                            tracing::debug!(
+                            tracing::info!(
                                 "飞书 WS: 群聊顶层消息未@bot，跳过 {}",
                                 raw_msg.message_id
                             );
@@ -527,7 +549,7 @@ impl FeishuClient {
                     let content = match raw_msg.message_type.as_str() {
                         "text" => match parse_text_content(&raw_msg.content) {
                             Some(t) => {
-                                let t = strip_at_placeholders(&t);
+                                let t = replace_at_placeholders(&t, &raw_msg.mentions);
                                 let t = t.trim().to_string();
                                 if t.is_empty() { continue; }
                                 if is_feishu_link(&t) {
@@ -1008,6 +1030,9 @@ impl FeishuClient {
             match msg_type {
                 "text" => {
                     if let Some(text) = parse_text_content(content_str) {
+                        // 从 REST API 消息中提取 mentions 并替换占位符
+                        let mentions = parse_mentions_from_msg(msg);
+                        let text = replace_at_placeholders(&text, &mentions);
                         let text = text.trim().to_string();
                         if !text.is_empty() {
                             if is_feishu_link(&text) {
@@ -1549,27 +1574,33 @@ fn mime_from_ext(file_name: &str) -> String {
     .to_string()
 }
 
-/// 去除飞书群聊中注入的 `@_user_N` 占位符
-fn strip_at_placeholders(text: &str) -> String {
-    let mut result = String::with_capacity(text.len());
-    let mut chars = text.char_indices().peekable();
-    while let Some((_, ch)) = chars.next() {
-        if ch == '@' {
-            let rest: String = chars.clone().map(|(_, c)| c).collect();
-            if let Some(after) = rest.strip_prefix("_user_") {
-                let skip =
-                    "_user_".len() + after.chars().take_while(|c| c.is_ascii_digit()).count();
-                // skip 个字符已通过 chars.clone() 计算，逐一消费迭代器跳过
-                for _ in 0..skip {
-                    chars.next();
-                }
-                if chars.peek().map(|(_, c)| *c == ' ').unwrap_or(false) {
-                    chars.next();
-                }
-                continue;
-            }
+/// 从 REST API 返回的消息 JSON 中提取 mentions 数组
+fn parse_mentions_from_msg(msg: &serde_json::Value) -> Vec<RawMention> {
+    msg.get("mentions")
+        .and_then(|v| v.as_array())
+        .map(|arr| {
+            arr.iter()
+                .filter_map(|m| serde_json::from_value(m.clone()).ok())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+/// 将 `@_user_N` 占位符替换为 @真实姓名；bot mention 直接移除
+fn replace_at_placeholders(text: &str, mentions: &[RawMention]) -> String {
+    let mut result = text.to_string();
+    for m in mentions {
+        if m.key.is_empty() {
+            continue;
         }
-        result.push(ch);
+        if m.mentioned_type.as_deref() == Some("bot") {
+            // bot → 移除占位符及其后的空格
+            result = result.replace(&format!("{} ", m.key), "");
+            result = result.replace(&m.key, "");
+        } else {
+            // 人 → 替换为 @姓名
+            result = result.replace(&m.key, &format!("@{}", m.name));
+        }
     }
     result
 }
@@ -1591,16 +1622,40 @@ mod tests {
     }
 
     #[test]
-    fn test_strip_at_placeholders() {
-        let text = "hello @_user_1 world @_user_22 done";
-        let result = strip_at_placeholders(text);
-        assert_eq!(result, "hello world done");
+    fn test_replace_at_placeholders_bot_removed() {
+        let mentions = vec![RawMention {
+            key: "@_user_1".to_string(),
+            name: "AI智能助手".to_string(),
+            mentioned_type: Some("bot".to_string()),
+        }];
+        let text = "@_user_1 帮我查下";
+        let result = replace_at_placeholders(text, &mentions);
+        assert_eq!(result, "帮我查下");
     }
 
     #[test]
-    fn test_strip_at_placeholders_no_change() {
+    fn test_replace_at_placeholders_user_replaced() {
+        let mentions = vec![
+            RawMention {
+                key: "@_user_1".to_string(),
+                name: "AI智能助手".to_string(),
+                mentioned_type: Some("bot".to_string()),
+            },
+            RawMention {
+                key: "@_user_2".to_string(),
+                name: "张三".to_string(),
+                mentioned_type: Some("user".to_string()),
+            },
+        ];
+        let text = "@_user_1 @_user_2 帮我约个会";
+        let result = replace_at_placeholders(text, &mentions);
+        assert_eq!(result, "@张三 帮我约个会");
+    }
+
+    #[test]
+    fn test_replace_at_placeholders_no_mentions() {
         let text = "@Alice please review";
-        let result = strip_at_placeholders(text);
+        let result = replace_at_placeholders(text, &[]);
         assert_eq!(result, "@Alice please review");
     }
 
@@ -1646,34 +1701,23 @@ mod tests {
         assert_eq!(result, Some("  ".to_string()));
     }
 
-    // ── strip_at_placeholders 边界情况 ───────────────────────────────────────
+    // ── replace_at_placeholders 边界情况 ─────────────────────────────────────
 
     #[test]
-    fn test_strip_at_placeholders_at_end_of_string() {
-        // @_user_N 出现在字符串末尾，不应 panic
-        let text = "hello @_user_5";
-        let result = strip_at_placeholders(text);
-        assert_eq!(result, "hello ");
+    fn test_replace_at_placeholders_empty_string() {
+        assert_eq!(replace_at_placeholders("", &[]), "");
     }
 
     #[test]
-    fn test_strip_at_placeholders_multiple_consecutive() {
-        // 连续多个 @_user_N 均应被移除
-        let text = "@_user_1@_user_2@_user_3";
-        let result = strip_at_placeholders(text);
-        assert_eq!(result, "");
-    }
-
-    #[test]
-    fn test_strip_at_placeholders_empty_string() {
-        // 空字符串不应 panic
-        assert_eq!(strip_at_placeholders(""), "");
-    }
-
-    #[test]
-    fn test_strip_at_placeholders_at_sign_only() {
-        // 单独的 @ 符号不应被移除
-        assert_eq!(strip_at_placeholders("@"), "@");
+    fn test_replace_at_placeholders_empty_key_skipped() {
+        let mentions = vec![RawMention {
+            key: "".to_string(),
+            name: "张三".to_string(),
+            mentioned_type: Some("user".to_string()),
+        }];
+        let text = "@_user_1 hello";
+        let result = replace_at_placeholders(text, &mentions);
+        assert_eq!(result, "@_user_1 hello");
     }
 
     // ── parse_image_content ──────────────────────────────────────────────────
@@ -2011,7 +2055,7 @@ mod tests {
 
     #[test]
     fn test_msg_receive_payload_group_with_mention() {
-        // 群聊消息带 @mention，mentions[0].id.user_id 为 None 表示 @bot
+        // 群聊消息带 @mention，mentioned_type 为 "bot" 表示 @bot
         let json = r#"{
             "sender": {
                 "sender_id": {"open_id": "ou_user1"},
@@ -2023,13 +2067,13 @@ mod tests {
                 "chat_type": "group",
                 "message_type": "text",
                 "content": "{\"text\": \"@bot hello\"}",
-                "mentions": [{"id": {}}]
+                "mentions": [{"key": "@_user_1", "name": "AI助手", "mentioned_type": "bot"}]
             }
         }"#;
         let payload: MsgReceivePayload = serde_json::from_str(json).expect("应成功反序列化");
         assert_eq!(payload.message.chat_type, "group");
-        // bot mention 的 user_id 应为 None
-        assert!(payload.message.mentions[0].id.user_id.is_none());
+        // bot mention 的 mentioned_type 应为 "bot"
+        assert_eq!(payload.message.mentions[0].mentioned_type.as_deref(), Some("bot"));
     }
 
     // ── 分片重组纯逻辑 ───────────────────────────────────────────────────────
