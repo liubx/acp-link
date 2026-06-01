@@ -4,10 +4,11 @@ use std::rc::Rc;
 use std::sync::Arc;
 
 use agent_client_protocol::{
-    Agent, Client, ClientSideConnection, ContentBlock, ImageContent, Implementation,
-    InitializeRequest, LoadSessionRequest, NewSessionRequest, PermissionOptionKind, PromptRequest,
-    ProtocolVersion, RequestPermissionOutcome, RequestPermissionRequest, RequestPermissionResponse,
-    SelectedPermissionOutcome, SessionId, SessionNotification, SessionUpdate, TextContent,
+    Agent, CancelNotification, Client, ClientSideConnection, ContentBlock, ImageContent,
+    Implementation, InitializeRequest, LoadSessionRequest, NewSessionRequest,
+    PermissionOptionKind, PromptRequest, ProtocolVersion, RequestPermissionOutcome,
+    RequestPermissionRequest, RequestPermissionResponse, SelectedPermissionOutcome, SessionId,
+    SessionNotification, SessionUpdate, TextContent,
 };
 use anyhow::{Context, Result};
 use tokio::sync::{Mutex, mpsc, oneshot};
@@ -123,6 +124,9 @@ enum AcpCommand {
         session_id: String,
         content: Vec<ContentBlock>,
         reply: oneshot::Sender<Result<mpsc::UnboundedReceiver<StreamEvent>>>,
+    },
+    Cancel {
+        session_id: String,
     },
 }
 
@@ -242,14 +246,46 @@ async fn acp_event_loop(
                 // receiver 先发回调用方，使其可立即消费 chunk
                 let _ = reply.send(Ok(rx));
 
-                let result = conn.prompt(PromptRequest::new(sid, content)).await;
+                // prompt 执行期间同时监听 cancel 命令
+                let prompt_fut = conn.prompt(PromptRequest::new(sid.clone(), content));
+                tokio::pin!(prompt_fut);
+                let mut cancelled = false;
+
+                let result = loop {
+                    tokio::select! {
+                        biased;
+                        res = &mut prompt_fut => { break res; }
+                        cmd = cmd_rx.recv() => {
+                            match cmd {
+                                Some(AcpCommand::Cancel { session_id: cancel_sid }) if cancel_sid == session_id => {
+                                    if !cancelled {
+                                        cancelled = true;
+                                        tracing::info!("[worker-{worker_id}] 收到 cancel: session={session_id}");
+                                        if let Err(e) = conn.cancel(CancelNotification::new(sid.clone())).await {
+                                            tracing::warn!("[worker-{worker_id}] cancel 发送失败: {e:?}");
+                                        }
+                                    }
+                                }
+                                Some(_other) => {
+                                    // prompt 期间收到非 cancel 命令，忽略（不应发生）
+                                    tracing::warn!("[worker-{worker_id}] prompt 期间收到非 cancel 命令，忽略");
+                                }
+                                None => {
+                                    // cmd_rx 关闭，等 prompt 结束
+                                    break prompt_fut.await;
+                                }
+                            }
+                        }
+                    }
+                };
+
                 // prompt 结束，drop sender 通知调用方流已结束
                 *chunk_tx.borrow_mut() = None;
 
                 match result {
                     Ok(resp) => {
                         tracing::debug!(
-                            "[worker-{worker_id}] ACP prompt 完成: stop_reason={:?}",
+                            "[worker-{worker_id}] ACP prompt 完成: stop_reason={:?}, cancelled={cancelled}",
                             resp.stop_reason
                         );
                     }
@@ -257,6 +293,12 @@ async fn acp_event_loop(
                         tracing::error!("[worker-{worker_id}] ACP prompt 失败: {e:?}");
                     }
                 }
+            }
+            AcpCommand::Cancel { session_id } => {
+                // prompt 未在执行时收到 cancel，直接发送（可能是竞态）
+                tracing::debug!("[worker-{worker_id}] cancel（无活跃 prompt）: session={session_id}");
+                let sid = SessionId::new(session_id.as_str());
+                let _ = conn.cancel(CancelNotification::new(sid)).await;
             }
         }
     }
@@ -579,6 +621,17 @@ impl AcpBridge {
         .await?;
         rx.await
             .map_err(|_| anyhow::anyhow!("ACP 工作线程已退出"))?
+    }
+
+    /// 取消指定 session 的当前 prompt，通知 agent 停止发起新工具调用
+    pub async fn cancel(&self, routing_key: &str, session_id: &str) -> Result<()> {
+        self.send_cmd(
+            routing_key,
+            AcpCommand::Cancel {
+                session_id: session_id.to_owned(),
+            },
+        )
+        .await
     }
 
     /// 构建文本 ContentBlock

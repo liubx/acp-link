@@ -742,8 +742,17 @@ async fn do_stream_prepared(
             tracing::info!("流式处理被中止: reply_message_id={reply_message_id}");
             aborted = true;
             full_text.push_str("\n\n⚠️ 已中止");
-            dirty = true;
-            break;
+            // 重置 last_update 确保下一轮立即推送 "⚠️ 已中止" 到飞书
+            last_update = Instant::now() - MESSAGE_UPDATE_INTERVAL;
+            // 发送 cancel 通知 agent 停止发起新工具调用，但不 break，继续消费已有 chunk
+            let bridge = state.bridge.clone();
+            let rk = routing_key.to_owned();
+            let sid = session_id.to_owned();
+            tokio::spawn(async move {
+                if let Err(e) = bridge.cancel(&rk, &sid).await {
+                    tracing::warn!("发送 cancel 失败: {e}");
+                }
+            });
         }
         chunk_count += 1;
         let in_tool_call = matches!(&event, StreamEvent::ToolCall(_));
@@ -800,9 +809,8 @@ async fn do_stream_prepared(
         }
     }
 
-    // 如果被中止，drain 剩余 chunk（让 ACP worker 正常结束 prompt）
+    // 如果被中止，清理 abort_set
     if aborted {
-        while chunk_rx.recv().await.is_some() {}
         state.abort_set.write().await.remove(reply_message_id);
     }
 
