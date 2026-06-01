@@ -519,12 +519,19 @@ impl FeishuClient {
                         } else if in_thread {
                             // 话题内未 @任何人，检查是否在活跃窗口内
                             let in_grace = {
-                                let mut grace = self.at_bot_grace.write().await;
+                                let grace = self.at_bot_grace.read().await;
                                 let now = Instant::now();
-                                grace.retain(|_, t| now.duration_since(*t) < AT_BOT_GRACE_WINDOW);
-                                let keys: Vec<_> = grace.keys().cloned().collect();
-                                tracing::info!("飞书 WS: 检查活跃窗口 key={}, 当前窗口={:?}", grace_key, keys);
-                                grace.contains_key(&grace_key)
+                                if let Some(t) = grace.get(&grace_key) {
+                                    let elapsed = now.saturating_duration_since(*t);
+                                    tracing::info!(
+                                        "飞书 WS: 检查活跃窗口 key={}, elapsed={}ms, window={}s",
+                                        grace_key, elapsed.as_millis(), AT_BOT_GRACE_WINDOW.as_secs()
+                                    );
+                                    elapsed < AT_BOT_GRACE_WINDOW
+                                } else {
+                                    tracing::info!("飞书 WS: 检查活跃窗口 key={}, 不存在", grace_key);
+                                    false
+                                }
                             };
                             if !in_grace {
                                 tracing::info!(
