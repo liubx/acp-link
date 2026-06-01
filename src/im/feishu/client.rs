@@ -274,6 +274,8 @@ pub struct FeishuClient {
     seen_ids: Arc<RwLock<HashMap<String, Instant>>>,
     /// 群聊免 @ 活跃窗口：key = "chat_id:sender_id"，value = 最后活跃时间
     at_bot_grace: Arc<RwLock<HashMap<String, Instant>>>,
+    /// 表情中止信号发送端（收到 ❌ 表情时发送 message_id）
+    abort_tx: Arc<RwLock<Option<tokio::sync::mpsc::UnboundedSender<String>>>>,
 }
 
 impl FeishuClient {
@@ -286,7 +288,17 @@ impl FeishuClient {
             tenant_token: Arc::new(RwLock::new(None)),
             seen_ids: Arc::new(RwLock::new(HashMap::new())),
             at_bot_grace: Arc::new(RwLock::new(HashMap::new())),
+            abort_tx: Arc::new(RwLock::new(None)),
         }
+    }
+
+    /// 创建 abort 信号 channel，返回 receiver
+    pub fn subscribe_abort(&self) -> tokio::sync::mpsc::UnboundedReceiver<String> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        if let Ok(mut guard) = self.abort_tx.try_write() {
+            *guard = Some(tx);
+        }
+        rx
     }
 
     /// 连接 WS 并持续接收消息，发送到 `tx`。
@@ -443,6 +455,20 @@ impl FeishuClient {
                         Ok(e) => e,
                         Err(e) => { tracing::error!("飞书 WS: 事件 JSON 解析失败: {e}"); continue; }
                     };
+                    // 处理表情回复事件（❌ 触发中止）
+                    if event.header.event_type == "im.message.reaction.created_v1" {
+                        if let Some(emoji_type) = event.event.pointer("/reaction_type/emoji_type").and_then(|v| v.as_str()) {
+                            if emoji_type == "CrossMark" {
+                                if let Some(msg_id) = event.event.pointer("/message_id").and_then(|v| v.as_str()) {
+                                    tracing::info!("飞书 WS: 收到 ❌ 表情中止信号: message_id={msg_id}");
+                                    if let Some(abort_tx) = self.abort_tx.read().await.as_ref() {
+                                        let _ = abort_tx.send(msg_id.to_owned());
+                                    }
+                                }
+                            }
+                        }
+                        continue;
+                    }
                     if event.header.event_type != "im.message.receive_v1" {
                         continue;
                     }

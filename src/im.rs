@@ -111,6 +111,13 @@ pub struct FileItem {
     pub file_name: String,
 }
 
+/// 表情中止事件：用户对某条消息添加了中止表情（❌）
+#[derive(Debug, Clone)]
+pub struct AbortEvent {
+    /// 被添加表情的消息 ID（即 bot 的回复消息）
+    pub message_id: String,
+}
+
 /// IM 平台统一 trait
 ///
 /// 所有 IM 平台（飞书、钉钉、Slack 等）须实现此 trait。
@@ -179,4 +186,12 @@ pub trait IMChannel: Send + Sync {
         tool_name: &str,
         args: &serde_json::Value,
     ) -> Result<serde_json::Value, String>;
+
+    /// 订阅中止事件（表情回复触发）
+    ///
+    /// 返回一个 receiver，当用户对 bot 消息添加 ❌ 表情时会收到 AbortEvent。
+    /// 默认返回 None（平台不支持）。
+    fn subscribe_abort(&self) -> Option<mpsc::UnboundedReceiver<AbortEvent>> {
+        None
+    }
 }

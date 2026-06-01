@@ -62,6 +62,8 @@ struct SharedState {
     loaded_sessions: RwLock<HashSet<String>>,
     /// 增量模式下每个 thread 尚未投递给 agent 的附件
     pending_attachments: RwLock<HashMap<String, Vec<PendingAttachment>>>,
+    /// 需要中止的 reply_message_id 集合（表情回复触发）
+    abort_set: RwLock<HashSet<String>>,
     /// 工作目录，传递给 ACP session
     cwd: PathBuf,
     /// Session 保留天数
@@ -127,6 +129,7 @@ impl LinkService {
                 session_map: RwLock::new(session_map),
                 loaded_sessions: RwLock::new(HashSet::new()),
                 pending_attachments: RwLock::new(HashMap::new()),
+                abort_set: RwLock::new(HashSet::new()),
                 cwd,
                 session_retention: config.session_retention,
                 resource_retention: config.resource_retention,
@@ -151,6 +154,9 @@ impl LinkService {
 
         self.run_cleanup().await;
 
+        // 订阅表情中止事件
+        let mut abort_rx = self.state.channel.subscribe_abort();
+
         let mut cleanup_interval = tokio::time::interval(Duration::from_secs(3600));
         cleanup_interval.tick().await;
 
@@ -165,6 +171,17 @@ impl LinkService {
 
                 _ = cleanup_interval.tick() => {
                     self.run_cleanup().await;
+                }
+
+                // 处理表情中止事件
+                Some(abort_event) = async {
+                    match abort_rx.as_mut() {
+                        Some(rx) => rx.recv().await,
+                        None => std::future::pending().await,
+                    }
+                } => {
+                    tracing::info!("收到中止信号: message_id={}", abort_event.message_id);
+                    self.state.abort_set.write().await.insert(abort_event.message_id);
                 }
 
                 msg = rx.recv() => {
@@ -718,7 +735,16 @@ async fn do_stream_prepared(
     let mut first_chunk_logged = false;
     // 跟踪后台消息更新任务，避免并发更新冲突
     let mut inflight: Option<tokio::task::JoinHandle<()>> = None;
+    let mut aborted = false;
     while let Some(event) = chunk_rx.recv().await {
+        // 每收到 chunk 检查是否需要中止
+        if !aborted && state.abort_set.read().await.contains(reply_message_id) {
+            tracing::info!("流式处理被中止: reply_message_id={reply_message_id}");
+            aborted = true;
+            full_text.push_str("\n\n⚠️ 已中止");
+            dirty = true;
+            break;
+        }
         chunk_count += 1;
         let in_tool_call = matches!(&event, StreamEvent::ToolCall(_));
         match event {
@@ -774,6 +800,12 @@ async fn do_stream_prepared(
         }
     }
 
+    // 如果被中止，drain 剩余 chunk（让 ACP worker 正常结束 prompt）
+    if aborted {
+        while chunk_rx.recv().await.is_some() {}
+        state.abort_set.write().await.remove(reply_message_id);
+    }
+
     if dirty || full_text.is_empty() {
         let final_text = if full_text.trim().is_empty() {
             "(无响应)".to_string()
@@ -790,7 +822,7 @@ async fn do_stream_prepared(
     }
 
     tracing::info!(
-        "ACP prompt 流结束: session={session_id}, chunks={chunk_count}, 总耗时={}ms",
+        "ACP prompt 流结束: session={session_id}, chunks={chunk_count}, aborted={aborted}, 总耗时={}ms",
         stream_start.elapsed().as_millis()
     );
     Ok(())

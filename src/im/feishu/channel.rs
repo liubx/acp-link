@@ -16,7 +16,7 @@ use async_trait::async_trait;
 use tokio::sync::mpsc;
 
 use super::client::{FeishuClient, FeishuMessage, MessageContent, ThreadSubmission};
-use crate::im::{FileItem, IMChannel, ImMessage, ImMessageContent, ImageItem, TopicSubmission};
+use crate::im::{AbortEvent, FileItem, IMChannel, ImMessage, ImMessageContent, ImageItem, TopicSubmission};
 
 /// 飞书平台的 IMChannel 实现
 #[derive(Clone)]
@@ -120,6 +120,18 @@ impl IMChannel for FeishuChannel {
         args: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
         super::mcp_tools::call(tool_name, args, &self.client).await
+    }
+
+    fn subscribe_abort(&self) -> Option<mpsc::UnboundedReceiver<AbortEvent>> {
+        let rx = self.client.subscribe_abort();
+        let (tx, abort_rx) = mpsc::unbounded_channel();
+        tokio::spawn(async move {
+            let mut rx = rx;
+            while let Some(message_id) = rx.recv().await {
+                let _ = tx.send(AbortEvent { message_id });
+            }
+        });
+        Some(abort_rx)
     }
 }
 
