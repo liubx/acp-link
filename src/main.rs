@@ -58,8 +58,10 @@ async fn main() -> Result<()> {
             &feishu.app_id,
             &feishu.app_secret,
         ))
+    } else if config.im.wechat.is_some() {
+        Arc::new(acp_link::im::WechatChannel::new())
     } else {
-        anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 中填写配置")
+        anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 或 [im.wechat] 中填写配置")
     };
 
     let service = acp_link::link::LinkService::new(&config, config_path, channel).await?;

@@ -1,6 +1,6 @@
 [package]
 name = "acp-link"
-version = "0.2.12"
+version = "0.2.13"
 edition = "2024"
 
 [dependencies]
@@ -28,3 +28,10 @@ base64 = "0.22.1"
 axum = "0.8"
 uuid = { version = "1.23.0", features = ["v4"] }
 tokio-cron-scheduler = { version = "0.15.1", features = ["signal"] }
+# 微信 ClawBot (iLink) 相关依赖
+hex = "0.4"
+rand = "0.9"
+urlencoding = "2"
+md5 = "0.7"
+chrono = "0.4"
+aes = "0.8"

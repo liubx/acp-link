@@ -774,7 +774,7 @@ async fn do_stream_prepared(
             }
         }
 
-        if last_update.elapsed() >= MESSAGE_UPDATE_INTERVAL {
+        if last_update.elapsed() >= MESSAGE_UPDATE_INTERVAL && state.channel.platform_name() != "wechat" {
             // 如果上一次更新还在进行中，跳过本次（下次会带上所有累积 chunk）
             let should_send = match &inflight {
                 Some(h) => h.is_finished(),

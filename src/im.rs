@@ -16,7 +16,9 @@
 //! - [`FeishuChannel`] — 飞书平台（WS 长连接 + REST API）
 
 mod feishu;
+mod wechat;
 pub use self::feishu::FeishuChannel;
+pub use self::wechat::WechatChannel;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;

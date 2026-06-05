@@ -31,10 +31,19 @@ pub struct FeishuConfig {
     pub app_secret: String,
 }
 
+/// 微信 ClawBot (iLink) 配置
+///
+/// 只需声明 `[im.wechat]` 即可启用微信平台。
+/// 启动时自动加载 `~/.acp-link/wechat/` 下所有已保存的登录实例，
+/// 并提供新的 QR 码供额外账号扫码登录。每扫一个码自动新增一个实例。
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct WechatConfig {}
+
 /// IM 平台配置（互斥，只能配置一个平台）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct ImConfig {
     pub feishu: Option<FeishuConfig>,
+    pub wechat: Option<WechatConfig>,
 }
 
 impl ImConfig {
@@ -42,6 +51,8 @@ impl ImConfig {
     pub fn platform(&self) -> Option<&'static str> {
         if self.feishu.is_some() {
             Some("feishu")
+        } else if self.wechat.is_some() {
+            Some("wechat")
         } else {
             None
         }
@@ -49,9 +60,12 @@ impl ImConfig {
 
     /// 校验恰好配置了一个平台
     pub fn validate(&self) -> Result<()> {
-        match self.platform() {
-            Some(_) => Ok(()),
-            None => anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 中填写配置"),
+        let count =
+            self.feishu.is_some() as u8 + self.wechat.is_some() as u8;
+        match count {
+            0 => anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 或 [im.wechat] 中填写配置"),
+            1 => Ok(()),
+            _ => anyhow::bail!("只能配置一个 IM 平台（feishu 或 wechat），请移除多余配置"),
         }
     }
 }
