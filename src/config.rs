@@ -58,15 +58,14 @@ impl ImConfig {
         }
     }
 
-    /// 校验恰好配置了一个平台
+    /// 校验至少配置了一个平台
     pub fn validate(&self) -> Result<()> {
         let count =
             self.feishu.is_some() as u8 + self.wechat.is_some() as u8;
-        match count {
-            0 => anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 或 [im.wechat] 中填写配置"),
-            1 => Ok(()),
-            _ => anyhow::bail!("只能配置一个 IM 平台（feishu 或 wechat），请移除多余配置"),
+        if count == 0 {
+            anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 或 [im.wechat] 中填写配置");
         }
+        Ok(())
     }
 }
 

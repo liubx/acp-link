@@ -692,6 +692,13 @@ async fn prepare_prompt(
     }
 }
 
+/// 判断平台是否不支持流式更新消息
+fn is_non_streaming_platform(platform: &str) -> bool {
+    // multi 模式包含微信，为避免微信刷屏，整体跳过中间 update
+    // 飞书在 multi 模式下仍能通过最终 update 收到完整回复
+    matches!(platform, "wechat" | "multi")
+}
+
 /// 核心流式处理：发送到 ACP → 接收 chunk 并节流更新回复消息（prompt 已准备好）
 async fn do_stream_prepared(
     state: &Arc<SharedState>,
@@ -774,7 +781,7 @@ async fn do_stream_prepared(
             }
         }
 
-        if last_update.elapsed() >= MESSAGE_UPDATE_INTERVAL && state.channel.platform_name() != "wechat" {
+        if last_update.elapsed() >= MESSAGE_UPDATE_INTERVAL && !is_non_streaming_platform(state.channel.platform_name()) {
             // 如果上一次更新还在进行中，跳过本次（下次会带上所有累积 chunk）
             let should_send = match &inflight {
                 Some(h) => h.is_finished(),

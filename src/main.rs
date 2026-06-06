@@ -53,15 +53,25 @@ async fn main() -> Result<()> {
         acp_link::config::AppConfig::data_dir().display()
     );
 
-    let channel: Arc<dyn acp_link::im::IMChannel> = if let Some(ref feishu) = config.im.feishu {
-        Arc::new(acp_link::im::FeishuChannel::new(
-            &feishu.app_id,
-            &feishu.app_secret,
-        ))
-    } else if config.im.wechat.is_some() {
-        Arc::new(acp_link::im::WechatChannel::new())
-    } else {
-        anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 或 [im.wechat] 中填写配置")
+    let channel: Arc<dyn acp_link::im::IMChannel> = {
+        let mut channels: Vec<Arc<dyn acp_link::im::IMChannel>> = Vec::new();
+
+        if let Some(ref feishu) = config.im.feishu {
+            channels.push(Arc::new(acp_link::im::FeishuChannel::new(
+                &feishu.app_id,
+                &feishu.app_secret,
+            )));
+        }
+
+        if config.im.wechat.is_some() {
+            channels.push(Arc::new(acp_link::im::WechatChannel::new()));
+        }
+
+        match channels.len() {
+            0 => anyhow::bail!("未配置 IM 平台，请在 [im.feishu] 或 [im.wechat] 中填写配置"),
+            1 => channels.into_iter().next().unwrap(),
+            _ => Arc::new(acp_link::im::MultiChannel::new(channels)),
+        }
     };
 
     let service = acp_link::link::LinkService::new(&config, config_path, channel).await?;

@@ -17,8 +17,10 @@
 
 mod feishu;
 mod wechat;
+mod multi;
 pub use self::feishu::FeishuChannel;
 pub use self::wechat::WechatChannel;
+pub use self::multi::MultiChannel;
 
 use async_trait::async_trait;
 use tokio::sync::mpsc;
