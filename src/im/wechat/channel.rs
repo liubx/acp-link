@@ -13,8 +13,6 @@ use tokio::sync::{mpsc, RwLock};
 use super::client::{ParsedWechatMessage, TokenStore, WechatClient, WechatMessageContent};
 use crate::im::{IMChannel, ImMessage, ImMessageContent, TopicSubmission};
 
-const LOGIN_WAIT_TIMEOUT_SECS: u64 = 300;
-
 #[derive(Debug, Clone)]
 struct UserContext {
     context_token: String,
@@ -30,6 +28,8 @@ pub struct WechatChannel {
     user_contexts: Arc<RwLock<HashMap<String, UserContext>>>,
     /// 最近收到的消息缓存：topic_id → 最新消息内容（用于 aggregate_topic）
     recent_messages: Arc<RwLock<HashMap<String, RecentMessage>>>,
+    /// 待登录的账号名称列表
+    pending_accounts: Arc<RwLock<Vec<String>>>,
     store: TokenStore,
 }
 
@@ -44,7 +44,10 @@ struct RecentMessage {
 }
 
 impl WechatChannel {
-    pub fn new() -> Self {
+    /// 创建 WechatChannel
+    ///
+    /// `accounts`: 配置中声明的期望账号名称列表
+    pub fn new(accounts: &[String]) -> Self {
         let root = dirs::home_dir()
             .unwrap_or_else(|| PathBuf::from("."))
             .join(".acp-link")
@@ -59,16 +62,27 @@ impl WechatChannel {
             if td.account_id.is_empty() {
                 continue;
             }
+            let label = if td.name.is_empty() { &td.account_id } else { &td.name };
             let client = WechatClient::from_token(td, store.clone());
-            tracing::info!("加载微信账号: {}", td.account_id);
+            tracing::info!("加载微信账号: {label}");
             clients.insert(td.account_id.clone(), client);
+        }
+
+        // 找出配置中声明但 tokens.json 里没有的账号
+        let existing_names: Vec<String> = tokens.iter().map(|t| t.name.clone()).collect();
+        let missing: Vec<String> = accounts
+            .iter()
+            .filter(|name| !existing_names.contains(name))
+            .cloned()
+            .collect();
+
+        if !missing.is_empty() {
+            tracing::info!("以下账号需要扫码登录: {:?}", missing);
         }
 
         let count = clients.len();
         if count > 0 {
             tracing::info!("微信 ClawBot: 已加载 {count} 个账号");
-        } else {
-            tracing::info!("微信 ClawBot: 无已有账号，启动后需扫码");
         }
 
         Self {
@@ -76,13 +90,14 @@ impl WechatChannel {
             user_contexts: Arc::new(RwLock::new(HashMap::new())),
             recent_messages: Arc::new(RwLock::new(HashMap::new())),
             store,
+            pending_accounts: Arc::new(RwLock::new(missing)),
         }
     }
 
     /// 扫码登录新账号
-    async fn login_new(&self) -> anyhow::Result<(String, WechatClient)> {
+    async fn login_new(&self, name: &str) -> anyhow::Result<(String, WechatClient)> {
         let client = WechatClient::new_unauthenticated(self.store.clone());
-        let td = client.login().await?;
+        let td = client.login(name).await?;
         let acct = td.account_id.clone();
         self.clients.write().await.insert(acct.clone(), client.clone());
         Ok((acct, client))
@@ -164,41 +179,34 @@ impl IMChannel for WechatChannel {
     fn platform_name(&self) -> &str { "wechat" }
 
     async fn listen(&self, tx: mpsc::Sender<ImMessage>) -> anyhow::Result<()> {
-        if self.clients.read().await.is_empty() {
-            println!("=== 微信 ClawBot: 请扫码登录 ===");
-            match self.login_new().await {
-                Ok(_) => {}
-                Err(e) => {
-                    eprintln!("微信登录失败: {e}");
-                    return Err(e);
-                }
-            }
-        }
-
+        // 先启动已有 token 的账号监听
         let snapshot = self.clients.read().await.clone();
         let mut handles = Vec::new();
         for (id, client) in &snapshot {
             handles.push(self.spawn_listener(id.clone(), client.clone(), tx.clone()));
         }
 
-        // 后台持续提供扫码
-        let ch = self.clone();
-        let tx2 = tx.clone();
-        tokio::spawn(async move {
-            tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
-            loop {
-                println!("\n=== 扫码可添加新微信账号（{}秒超时后停止等待）===", LOGIN_WAIT_TIMEOUT_SECS);
-                match tokio::time::timeout(tokio::time::Duration::from_secs(LOGIN_WAIT_TIMEOUT_SECS), ch.login_new()).await {
-                    Ok(Ok((id, client))) => { ch.spawn_listener(id, client, tx2.clone()); }
-                    Ok(Err(e)) => {
-                        tracing::warn!("扫码失败: {e}");
-                        tokio::time::sleep(tokio::time::Duration::from_secs(30)).await;
-                    }
-                    Err(_) => { tracing::info!("扫码超时，停止等待"); break; }
+        // 为缺少 token 的账号依次扫码，每个扫完立即启动监听
+        let pending = self.pending_accounts.read().await.clone();
+        for name in &pending {
+            println!("=== 微信 ClawBot: 请为 [{name}] 扫码登录 ===");
+            match self.login_new(name).await {
+                Ok((id, client)) => {
+                    handles.push(self.spawn_listener(id.clone(), client.clone(), tx.clone()));
+                    self.clients.write().await.insert(id, client);
+                }
+                Err(e) => {
+                    eprintln!("[{name}] 登录失败: {e}");
                 }
             }
-        });
+        }
+        self.pending_accounts.write().await.clear();
 
+        if handles.is_empty() {
+            anyhow::bail!("没有任何微信账号可用，请检查配置或重新扫码");
+        }
+
+        // 等待监听 tasks
         let (result, _, rest) = futures::future::select_all(handles).await;
         for h in rest { h.abort(); }
         match result {

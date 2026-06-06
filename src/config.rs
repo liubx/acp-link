@@ -33,11 +33,15 @@ pub struct FeishuConfig {
 
 /// 微信 ClawBot (iLink) 配置
 ///
-/// 只需声明 `[im.wechat]` 即可启用微信平台。
-/// 启动时自动加载 `~/.acp-link/wechat/` 下所有已保存的登录实例，
-/// 并提供新的 QR 码供额外账号扫码登录。每扫一个码自动新增一个实例。
+/// 声明 `[im.wechat]` 即可启用。`accounts` 列表声明期望登录的微信账号，
+/// 启动时自动检查哪些账号缺少 token 或已过期，只对缺失的弹扫码。
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
-pub struct WechatConfig {}
+pub struct WechatConfig {
+    /// 期望登录的账号名称列表（如 ["Bingxin Liu", "Zhili Feng"]）
+    /// 启动时按名称匹配 tokens.json，缺失的才需要扫码
+    #[serde(default)]
+    pub accounts: Vec<String>,
+}
 
 /// IM 平台配置（互斥，只能配置一个平台）
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]

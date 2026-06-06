@@ -64,7 +64,9 @@ async fn main() -> Result<()> {
         }
 
         if config.im.wechat.is_some() {
-            channels.push(Arc::new(acp_link::im::WechatChannel::new()));
+            channels.push(Arc::new(acp_link::im::WechatChannel::new(
+                &config.im.wechat.as_ref().unwrap().accounts,
+            )));
         }
 
         match channels.len() {

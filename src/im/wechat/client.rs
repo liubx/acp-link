@@ -186,6 +186,9 @@ pub struct TokenData {
     pub base_url: String,
     pub account_id: String,
     pub user_id: String,
+    /// 账号名称（配置中声明的，如 "Bingxin Liu"）
+    #[serde(default)]
+    pub name: String,
     /// 消息轮询断点
     #[serde(default)]
     pub sync_buf: String,
@@ -275,10 +278,15 @@ impl TokenStore {
         Ok(())
     }
 
-    /// 添加或更新一个账号（按 account_id 去重）
+    /// 添加或更新一个账号（按 name 去重，name 为空时按 account_id）
     pub fn upsert(&self, data: &TokenData) -> Result<()> {
         let mut all = self.load_all();
-        if let Some(existing) = all.iter_mut().find(|t| t.account_id == data.account_id) {
+        let existing = if !data.name.is_empty() {
+            all.iter_mut().find(|t| t.name == data.name)
+        } else {
+            all.iter_mut().find(|t| t.account_id == data.account_id)
+        };
+        if let Some(existing) = existing {
             *existing = data.clone();
         } else {
             all.push(data.clone());
@@ -308,6 +316,8 @@ pub struct WechatClient {
     token: Arc<RwLock<Option<String>>>,
     /// 该账号的 account_id
     pub account_id: Arc<RwLock<String>>,
+    /// 账号名称
+    pub name: Arc<RwLock<String>>,
     sync_buf: Arc<RwLock<String>>,
     store: TokenStore,
 }
@@ -321,6 +331,7 @@ impl WechatClient {
             cdn_base_url: DEFAULT_CDN_URL.to_string(),
             token: Arc::new(RwLock::new(Some(data.token.clone()))),
             account_id: Arc::new(RwLock::new(data.account_id.clone())),
+            name: Arc::new(RwLock::new(data.name.clone())),
             sync_buf: Arc::new(RwLock::new(data.sync_buf.clone())),
             store,
         }
@@ -334,6 +345,7 @@ impl WechatClient {
             cdn_base_url: DEFAULT_CDN_URL.to_string(),
             token: Arc::new(RwLock::new(None)),
             account_id: Arc::new(RwLock::new(String::new())),
+            name: Arc::new(RwLock::new(String::new())),
             sync_buf: Arc::new(RwLock::new(String::new())),
             store,
         }
@@ -363,10 +375,10 @@ impl WechatClient {
         headers
     }
 
-    /// QR 码登录
-    pub async fn login(&self) -> Result<TokenData> {
+    /// QR 码登录，`name` 为该账号的标识名称
+    pub async fn login(&self, name: &str) -> Result<TokenData> {
         let base_url = self.base_url.read().await.clone();
-        tracing::info!("开始微信 QR 码登录...");
+        tracing::info!("开始微信 QR 码登录 ({name})...");
 
         let url = format!("{}/ilink/bot/get_bot_qrcode?bot_type=3", base_url.trim_end_matches('/'));
         let resp = self.http
@@ -383,7 +395,7 @@ impl WechatClient {
 
         let qr_resp: QrCodeResp = resp.json().await.context("解析 QR 码响应失败")?;
 
-        println!("请使用微信扫描以下二维码登录：");
+        println!("请使用微信扫描以下二维码登录（{name}）：");
         println!("{}", qr_resp.qrcode_img_content);
 
         let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(300);
@@ -422,12 +434,13 @@ impl WechatClient {
                     println!("{}", new_resp.qrcode_img_content);
                 }
                 "confirmed" => {
-                    tracing::info!("微信登录成功！");
+                    tracing::info!("微信登录成功！({name})");
                     let token_data = TokenData {
                         token: status.bot_token.unwrap_or_default(),
                         base_url: status.baseurl.unwrap_or_else(|| base_url.clone()),
                         account_id: status.ilink_bot_id.unwrap_or_default(),
                         user_id: status.ilink_user_id.unwrap_or_default(),
+                        name: name.to_string(),
                         sync_buf: String::new(),
                         saved_at: chrono::Utc::now().to_rfc3339(),
                     };
@@ -438,6 +451,7 @@ impl WechatClient {
                     *self.token.write().await = Some(token_data.token.clone());
                     *self.base_url.write().await = token_data.base_url.clone();
                     *self.account_id.write().await = token_data.account_id.clone();
+                    *self.name.write().await = name.to_string();
 
                     tracing::info!("Bot ID: {}", token_data.account_id);
                     return Ok(token_data);
@@ -495,7 +509,8 @@ impl WechatClient {
                         if errcode == SESSION_EXPIRED_ERRCODE || resp.ret.unwrap_or(0) == SESSION_EXPIRED_ERRCODE {
                             tracing::warn!("微信 session 已过期，尝试重新登录...");
                             *self.token.write().await = None;
-                            if let Err(e) = self.login().await {
+                            let name = self.name.read().await.clone();
+                            if let Err(e) = self.login(&name).await {
                                 tracing::error!("重新登录失败: {e}");
                                 tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
                             }

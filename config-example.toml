@@ -23,10 +23,10 @@ app_id = "cli_xxxxxxx"
 app_secret = "xxxxxxxxx"
 
 # 或者使用微信 ClawBot（iLink Bot API）：
-# 只需声明即可启用，启动后扫码登录。
-# 已登录的账号 token 保存在 ~/.acp-link/wechat/ 下，下次启动自动恢复。
-# 支持多账号：每扫一个码自动新增一个实例，所有消息统一处理。
+# 只需声明即可启用。accounts 列表声明期望登录的微信账号，
+# 启动时自动检查 tokens.json，缺少的才需要扫码。
 # [im.wechat]
+# accounts = ["Bingxin Liu", "Zhili Feng"]
 
 # ── ACP Backend Agent 配置 ────────────────────────────────────
 # 支持 kiro-cli、claude 等任意 ACP 兼容 agent
