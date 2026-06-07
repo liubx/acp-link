@@ -486,6 +486,9 @@ impl WechatClient {
     /// 持续监听消息
     pub async fn listen(&self, tx: tokio::sync::mpsc::Sender<ParsedWechatMessage>) -> Result<()> {
         let mut consecutive_failures: u32 = 0;
+        // 消息去重：记录最近处理过的 message_id
+        let mut seen_ids: std::collections::VecDeque<u64> = std::collections::VecDeque::new();
+        const MAX_SEEN: usize = 500;
 
         loop {
             match self.get_updates().await {
@@ -538,6 +541,16 @@ impl WechatClient {
                             }
                             if msg.group_id.as_ref().is_some_and(|g| !g.is_empty()) {
                                 continue;
+                            }
+                            // 去重
+                            if let Some(mid) = msg.message_id {
+                                if seen_ids.contains(&mid) {
+                                    continue;
+                                }
+                                seen_ids.push_back(mid);
+                                if seen_ids.len() > MAX_SEEN {
+                                    seen_ids.pop_front();
+                                }
                             }
                             if let Some(parsed) = Self::parse_message(&msg) {
                                 if tx.send(parsed).await.is_err() {

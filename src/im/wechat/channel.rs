@@ -336,6 +336,7 @@ impl IMChannel for WechatChannel {
 // ── 辅助 ──────────────────────────────────────────────────────────────────
 
 fn convert_message(msg: ParsedWechatMessage) -> ImMessage {
+    let is_text = matches!(&msg.content, WechatMessageContent::Text(_));
     ImMessage {
         message_id: format!("{}:{}", msg.from_user_id, msg.message_id),
         chat_id: msg.session_id.clone(),
@@ -343,8 +344,9 @@ fn convert_message(msg: ParsedWechatMessage) -> ImMessage {
         sender_id: msg.from_user_id,
         content: convert_content(msg.content),
         timestamp: msg.timestamp_ms / 1000,
-        // 用 session_id（= user_id）作为 topic_id，保证同用户消息路由到同一 session
-        topic_id: Some(msg.session_id),
+        // 文字消息带 topic_id 路由到已有 session；
+        // 图片/文件等走 None 路径，存入 chat pending 等后续文字触发
+        topic_id: if is_text { Some(msg.session_id) } else { None },
     }
 }
 
