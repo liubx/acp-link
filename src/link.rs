@@ -627,6 +627,12 @@ async fn prepare_prompt(
                     data.len(),
                     mime
                 );
+                // 注入 CDNMedia key hint，让 agent 可以用 wechat_download_media 保存图片
+                if img.image_key.contains("encrypt_query_param") {
+                    blocks.push(AcpBridge::text_block(&format!(
+                        "[image_media_key: {}]", img.image_key
+                    )));
+                }
                 blocks.push(AcpBridge::image_block(&data, mime));
             }
 
@@ -966,6 +972,11 @@ async fn append_attachment_blocks(
                     data.len(),
                     mime
                 );
+                if img.image_key.contains("encrypt_query_param") {
+                    blocks.push(AcpBridge::text_block(&format!(
+                        "[image_media_key: {}]", img.image_key
+                    )));
+                }
                 blocks.push(AcpBridge::image_block(&data, mime));
             }
             PendingAttachment::File(file) => {
