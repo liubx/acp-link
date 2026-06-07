@@ -287,13 +287,15 @@ impl IMChannel for WechatChannel {
     async fn upload_image(&self, name: &str, data: &[u8]) -> anyhow::Result<String> {
         let clients = self.clients.read().await;
         let c = clients.values().next().ok_or_else(|| anyhow::anyhow!("无可用账号"))?;
-        Ok(serde_json::to_string(&c.upload_media(data, name, 1, "").await?)?)
+        let uploaded = c.upload_media(data, name, 1, "").await?;
+        Ok(serde_json::to_string(&uploaded.media)?)
     }
 
     async fn upload_file(&self, name: &str, data: &[u8]) -> anyhow::Result<String> {
         let clients = self.clients.read().await;
         let c = clients.values().next().ok_or_else(|| anyhow::anyhow!("无可用账号"))?;
-        Ok(serde_json::to_string(&c.upload_media(data, name, 3, "").await?)?)
+        let uploaded = c.upload_media(data, name, 3, "").await?;
+        Ok(serde_json::to_string(&uploaded.media)?)
     }
 
     async fn send_image_reply(&self, mid: &str, key: &str) -> anyhow::Result<()> {
@@ -317,10 +319,17 @@ impl IMChannel for WechatChannel {
         c.send_text(cid, md, &ct).await
     }
 
-    fn mcp_tool_list(&self) -> Vec<serde_json::Value> { vec![] }
+    fn mcp_tool_list(&self) -> Vec<serde_json::Value> {
+        super::mcp_tools::list()
+    }
 
-    async fn mcp_tool_call(&self, _: &str, _: &serde_json::Value) -> Result<serde_json::Value, String> {
-        Err("微信平台暂不支持 MCP tools".into())
+    async fn mcp_tool_call(&self, tool_name: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
+        // 从 args 中提取 message_id 以获取 user_id 和 context_token
+        let message_id = args.get("message_id").and_then(|v| v.as_str()).unwrap_or("");
+        let (uid, _) = parse_mid(message_id);
+
+        let (client, context_token) = self.resolve_client(&uid).await.map_err(|e| e.to_string())?;
+        super::mcp_tools::call(tool_name, args, &client, &context_token).await
     }
 }
 

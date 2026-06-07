@@ -10,5 +10,6 @@
 
 mod channel;
 mod client;
+pub(crate) mod mcp_tools;
 
 pub use self::channel::WechatChannel;

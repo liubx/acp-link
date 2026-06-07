@@ -564,8 +564,8 @@ async fn prepare_prompt(
                 _ => anyhow::bail!("增量模式仅支持文本消息"),
             };
             let context = format!(
-                "[im_context: message_id={}, chat_id={}]\n\n{}",
-                msg.message_id, msg.chat_id, text
+                "[im_context: message_id={}, chat_id={}, send_file_tool={}]\n\n{}",
+                msg.message_id, msg.chat_id, infer_send_file_tool(&msg.message_id), text
             );
             let pending = state
                 .pending_attachments
@@ -670,8 +670,8 @@ async fn prepare_prompt(
             blocks.insert(
                 0,
                 AcpBridge::text_block(&format!(
-                    "[im_context: message_id={}, chat_id={}]",
-                    msg.message_id, msg.chat_id
+                    "[im_context: message_id={}, chat_id={}, send_file_tool={}]",
+                    msg.message_id, msg.chat_id, infer_send_file_tool(&msg.message_id)
                 )),
             );
 
@@ -697,6 +697,15 @@ fn is_non_streaming_platform(platform: &str) -> bool {
     // multi 模式包含微信，为避免微信刷屏，整体跳过中间 update
     // 飞书在 multi 模式下仍能通过最终 update 收到完整回复
     matches!(platform, "wechat" | "multi")
+}
+
+/// 根据 message_id 前缀推断应使用的 send_file tool 名
+fn infer_send_file_tool(message_id: &str) -> &'static str {
+    if message_id.starts_with("wechat#") || message_id.contains("@im.wechat") {
+        "wechat_send_file"
+    } else {
+        "feishu_send_file"
+    }
 }
 
 /// 核心流式处理：发送到 ACP → 接收 chunk 并节流更新回复消息（prompt 已准备好）

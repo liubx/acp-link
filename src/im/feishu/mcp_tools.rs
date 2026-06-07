@@ -19,7 +19,7 @@ pub fn list() -> Vec<Value> {
     vec![
         json!({
             "name": "feishu_send_file",
-            "description": "Upload and send a file to the current Feishu chat thread. For image files (.png/.jpg/.gif/.webp/.bmp), sent as inline image; otherwise as file attachment. Extract message_id from [im_context] in the conversation.",
+            "description": "Upload and send a file to the current Feishu chat thread. ONLY use this tool when the message_id in [im_context] starts with 'feishu#' or looks like 'om_xxxxx'. For image files (.png/.jpg/.gif/.webp/.bmp), sent as inline image; otherwise as file attachment. Extract message_id from [im_context] in the conversation. Do NOT use wechat_send_file for Feishu messages.",
             "inputSchema": {
                 "type": "object",
                 "properties": {

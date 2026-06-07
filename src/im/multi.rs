@@ -165,7 +165,14 @@ impl IMChannel for MultiChannel {
         for ch in &self.channels {
             let tools = ch.mcp_tool_list();
             if tools.iter().any(|t| t.get("name").and_then(|n| n.as_str()) == Some(tool_name)) {
-                return ch.mcp_tool_call(tool_name, args).await;
+                // strip 平台前缀 from message_id in args
+                let mut args = args.clone();
+                if let Some(mid) = args.get("message_id").and_then(|v| v.as_str()) {
+                    if let Some((_platform, raw)) = mid.split_once('#') {
+                        args["message_id"] = serde_json::Value::String(raw.to_string());
+                    }
+                }
+                return ch.mcp_tool_call(tool_name, &args).await;
             }
         }
         Err(format!("未找到 tool: {tool_name}"))

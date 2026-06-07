@@ -71,6 +71,17 @@ pub struct CDNMedia {
     pub encrypt_type: Option<u32>,
 }
 
+/// 上传结果
+#[derive(Debug, Clone)]
+pub struct UploadedMedia {
+    pub media: CDNMedia,
+    /// 明文大小
+    #[allow(dead_code)]
+    pub raw_size: u64,
+    /// 密文大小
+    pub ciphertext_size: u64,
+}
+
 #[derive(Debug, Clone, Deserialize, Serialize, Default)]
 pub struct TextItem {
     pub text: Option<String>,
@@ -195,30 +206,7 @@ pub struct TokenData {
     pub saved_at: String,
 }
 
-#[derive(Debug, Serialize)]
-struct GetUploadUrlReq {
-    base_info: BaseInfo,
-    filekey: String,
-    media_type: u32,
-    to_user_id: String,
-    rawsize: u64,
-    rawfilemd5: String,
-    filesize: u64,
-    no_need_thumb: bool,
-    aeskey: String,
-}
-
-#[derive(Debug, Deserialize)]
-struct GetUploadUrlResp {
-    pub upload_param: Option<String>,
-    #[allow(dead_code)]
-    pub thumb_upload_param: Option<String>,
-}
-
-#[derive(Debug, Serialize)]
-struct BaseInfo {
-    channel_version: String,
-}
+// GetUploadUrlReq/Resp 不再需要，改用动态 JSON
 
 // ── 解析后的消息类型 ──────────────────────────────────────────────────────
 
@@ -730,43 +718,85 @@ impl WechatClient {
     }
 
     /// 上传媒体到 CDN
-    pub async fn upload_media(&self, data: &[u8], _file_name: &str, media_type: u32, to_user_id: &str) -> Result<CDNMedia> {
+    pub async fn upload_media(&self, data: &[u8], _file_name: &str, media_type: u32, to_user_id: &str) -> Result<UploadedMedia> {
         let base_url = self.base_url.read().await.clone();
         let token = self.token.read().await.clone();
 
         let aes_key_bytes: [u8; 16] = rand_bytes();
-        let aes_key_b64 = base64::engine::general_purpose::STANDARD.encode(aes_key_bytes);
+        let aes_key_hex = hex::encode(aes_key_bytes); // hex for getUploadUrl
+        // CDNMedia.aes_key = base64(hex_string)，跟 openclaw-weixin 一致
+        let aes_key_for_media = base64::engine::general_purpose::STANDARD.encode(aes_key_hex.as_bytes());
         let file_md5 = format!("{:x}", md5::compute(data));
         let filekey = format!("acp-link-{}", uuid::Uuid::new_v4());
         let encrypted = encrypt_aes_ecb(data, &aes_key_bytes)?;
 
-        let req_body = GetUploadUrlReq {
-            base_info: BaseInfo { channel_version: CHANNEL_VERSION.to_string() },
-            filekey: filekey.clone(),
-            media_type,
-            to_user_id: to_user_id.to_string(),
-            rawsize: data.len() as u64,
-            rawfilemd5: file_md5,
-            filesize: encrypted.len() as u64,
-            no_need_thumb: true,
-            aeskey: aes_key_b64.clone(),
-        };
+        // getUploadUrl: aeskey 用 hex 编码
+        let req_body = serde_json::json!({
+            "base_info": { "channel_version": CHANNEL_VERSION },
+            "filekey": filekey,
+            "media_type": media_type,
+            "to_user_id": to_user_id,
+            "rawsize": data.len(),
+            "rawfilemd5": file_md5,
+            "filesize": encrypted.len(),
+            "no_need_thumb": true,
+            "aeskey": aes_key_hex
+        });
 
-        let resp: GetUploadUrlResp = self.http
+        let resp_text = self.http
             .post(&format!("{}/ilink/bot/getuploadurl", base_url.trim_end_matches('/')))
             .headers(self.build_headers(token.as_deref()))
-            .json(&req_body).send().await?.json().await.context("获取上传 URL 失败")?;
+            .json(&req_body).send().await?
+            .text().await?;
 
-        let upload_param = resp.upload_param.context("缺少 upload_param")?;
-        let cdn_url = format!("{}/upload?encrypted_query_param={}&filekey={}", self.cdn_base_url.trim_end_matches('/'), urlencoding::encode(&upload_param), urlencoding::encode(&filekey));
+        let resp: serde_json::Value = serde_json::from_str(&resp_text)
+            .context(format!("getuploadurl 解析失败: {resp_text}"))?;
 
-        let upload_resp = self.http.post(&cdn_url).header("Content-Type", "application/octet-stream").body(encrypted).send().await.context("CDN 上传失败")?;
-        if !upload_resp.status().is_success() {
-            anyhow::bail!("CDN 上传失败: HTTP {}", upload_resp.status());
+        // 优先用 upload_full_url，其次 upload_param
+        let cdn_url = if let Some(full_url) = resp.get("upload_full_url").and_then(|v| v.as_str()).filter(|s| !s.is_empty()) {
+            full_url.to_string()
+        } else if let Some(upload_param) = resp.get("upload_param").and_then(|v| v.as_str()) {
+            format!("{}/upload?encrypted_query_param={}&filekey={}",
+                self.cdn_base_url.trim_end_matches('/'),
+                urlencoding::encode(upload_param),
+                urlencoding::encode(&filekey))
+        } else {
+            anyhow::bail!("getuploadurl 响应缺少 upload_full_url 和 upload_param: {resp_text}");
+        };
+
+        tracing::debug!("CDN upload URL: {cdn_url}, ciphertext size: {}", encrypted.len());
+
+        let upload_resp = self.http
+            .post(&cdn_url)
+            .header("Content-Type", "application/octet-stream")
+            .body(encrypted.clone())
+            .send().await
+            .context("CDN 上传请求失败")?;
+
+        let status = upload_resp.status();
+        let download_param = upload_resp.headers()
+            .get("x-encrypted-param")
+            .and_then(|v| v.to_str().ok())
+            .unwrap_or("").to_string();
+        let resp_body = upload_resp.text().await.unwrap_or_default();
+
+        if !status.is_success() {
+            anyhow::bail!("CDN 上传失败: HTTP {status}, body={resp_body}");
         }
 
-        let download_param = upload_resp.headers().get("x-encrypted-param").and_then(|v| v.to_str().ok()).unwrap_or("").to_string();
-        Ok(CDNMedia { encrypt_query_param: Some(download_param), aes_key: Some(aes_key_b64), encrypt_type: Some(0) })
+        if download_param.is_empty() {
+            anyhow::bail!("CDN 上传成功但响应缺少 x-encrypted-param header, body={resp_body}");
+        }
+
+        Ok(UploadedMedia {
+            media: CDNMedia {
+                encrypt_query_param: Some(download_param),
+                aes_key: Some(aes_key_for_media),
+                encrypt_type: Some(1),
+            },
+            raw_size: data.len() as u64,
+            ciphertext_size: encrypted.len() as u64,
+        })
     }
 
     /// 发送图片消息
@@ -780,10 +810,57 @@ impl WechatClient {
             "msg": {
                 "from_user_id": "", "to_user_id": to_user_id, "client_id": client_id,
                 "message_type": msg_type::BOT, "message_state": msg_state::FINISH, "context_token": context_token,
-                "item_list": [{ "type": item_type::IMAGE, "image_item": { "media": image_media } }]
+                "item_list": [{
+                    "type": item_type::IMAGE,
+                    "image_item": {
+                        "media": {
+                            "encrypt_query_param": image_media.encrypt_query_param,
+                            "aes_key": image_media.aes_key,
+                            "encrypt_type": image_media.encrypt_type.unwrap_or(1)
+                        }
+                    }
+                }]
             }
         });
-        self.http.post(&url).headers(self.build_headers(token.as_deref())).json(&body).send().await?;
+        let resp = self.http.post(&url).headers(self.build_headers(token.as_deref())).json(&body).send().await?;
+        if !resp.status().is_success() {
+            let s = resp.status();
+            let t = resp.text().await.unwrap_or_default();
+            anyhow::bail!("发送图片失败: HTTP {s}: {t}");
+        }
+        Ok(())
+    }
+
+    /// 发送图片消息（带密文大小，用于新上传的图片）
+    pub async fn send_image_with_size(&self, to_user_id: &str, image_media: &CDNMedia, ciphertext_size: u64, context_token: &str) -> Result<()> {
+        let base_url = self.base_url.read().await.clone();
+        let token = self.token.read().await.clone();
+        let client_id = format!("acp-link-{}", uuid::Uuid::new_v4());
+        let url = format!("{}/ilink/bot/sendmessage", base_url.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "base_info": { "channel_version": CHANNEL_VERSION },
+            "msg": {
+                "from_user_id": "", "to_user_id": to_user_id, "client_id": client_id,
+                "message_type": msg_type::BOT, "message_state": msg_state::FINISH, "context_token": context_token,
+                "item_list": [{
+                    "type": item_type::IMAGE,
+                    "image_item": {
+                        "media": {
+                            "encrypt_query_param": image_media.encrypt_query_param,
+                            "aes_key": image_media.aes_key,
+                            "encrypt_type": image_media.encrypt_type.unwrap_or(1)
+                        },
+                        "mid_size": ciphertext_size
+                    }
+                }]
+            }
+        });
+        let resp = self.http.post(&url).headers(self.build_headers(token.as_deref())).json(&body).send().await?;
+        if !resp.status().is_success() {
+            let s = resp.status();
+            let t = resp.text().await.unwrap_or_default();
+            anyhow::bail!("发送图片失败: HTTP {s}: {t}");
+        }
         Ok(())
     }
 
@@ -798,10 +875,59 @@ impl WechatClient {
             "msg": {
                 "from_user_id": "", "to_user_id": to_user_id, "client_id": client_id,
                 "message_type": msg_type::BOT, "message_state": msg_state::FINISH, "context_token": context_token,
-                "item_list": [{ "type": item_type::FILE, "file_item": { "media": file_media, "file_name": file_name, "len": file_size.to_string() } }]
+                "item_list": [{
+                    "type": item_type::FILE,
+                    "file_item": {
+                        "media": {
+                            "encrypt_query_param": file_media.encrypt_query_param,
+                            "aes_key": file_media.aes_key,
+                            "encrypt_type": file_media.encrypt_type.unwrap_or(1)
+                        },
+                        "file_name": file_name,
+                        "len": file_size.to_string()
+                    }
+                }]
             }
         });
-        self.http.post(&url).headers(self.build_headers(token.as_deref())).json(&body).send().await?;
+        let resp = self.http.post(&url).headers(self.build_headers(token.as_deref())).json(&body).send().await?;
+        if !resp.status().is_success() {
+            let s = resp.status();
+            let t = resp.text().await.unwrap_or_default();
+            anyhow::bail!("发送文件失败: HTTP {s}: {t}");
+        }
+        Ok(())
+    }
+
+    /// 发送视频消息
+    pub async fn send_video(&self, to_user_id: &str, video_media: &CDNMedia, ciphertext_size: u64, context_token: &str) -> Result<()> {
+        let base_url = self.base_url.read().await.clone();
+        let token = self.token.read().await.clone();
+        let client_id = format!("acp-link-{}", uuid::Uuid::new_v4());
+        let url = format!("{}/ilink/bot/sendmessage", base_url.trim_end_matches('/'));
+        let body = serde_json::json!({
+            "base_info": { "channel_version": CHANNEL_VERSION },
+            "msg": {
+                "from_user_id": "", "to_user_id": to_user_id, "client_id": client_id,
+                "message_type": msg_type::BOT, "message_state": msg_state::FINISH, "context_token": context_token,
+                "item_list": [{
+                    "type": item_type::VIDEO,
+                    "video_item": {
+                        "media": {
+                            "encrypt_query_param": video_media.encrypt_query_param,
+                            "aes_key": video_media.aes_key,
+                            "encrypt_type": video_media.encrypt_type.unwrap_or(1)
+                        },
+                        "video_size": ciphertext_size
+                    }
+                }]
+            }
+        });
+        let resp = self.http.post(&url).headers(self.build_headers(token.as_deref())).json(&body).send().await?;
+        if !resp.status().is_success() {
+            let s = resp.status();
+            let t = resp.text().await.unwrap_or_default();
+            anyhow::bail!("发送视频失败: HTTP {s}: {t}");
+        }
         Ok(())
     }
 }

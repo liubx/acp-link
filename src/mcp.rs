@@ -66,7 +66,7 @@ pub async fn start_mcp_server(channel: Arc<dyn IMChannel>, port: u16) -> Result<
 /// POST /mcp — 接收 JSON-RPC 请求
 async fn handle_post(
     State(state): State<Arc<McpState>>,
-    headers: HeaderMap,
+    _headers: HeaderMap,
     body: String,
 ) -> Response {
     let req: Value = match serde_json::from_str(&body) {
@@ -89,18 +89,14 @@ async fn handle_post(
         return (StatusCode::ACCEPTED, "").into_response();
     }
 
-    // 非 initialize 请求需要验证 session
+    // 非 initialize 请求需要验证 session（容错：不匹配时自动接受，避免重启后 agent 连接失败）
     if method != "initialize" {
         let expected = state.session_id.read().await;
-        if let Some(ref sid) = *expected {
-            let client_sid = headers.get("mcp-session-id").and_then(|v| v.to_str().ok());
-            if client_sid != Some(sid.as_str()) {
-                return json_response(
-                    StatusCode::BAD_REQUEST,
-                    None,
-                    make_error(&id, -32600, "Missing or invalid Mcp-Session-Id"),
-                );
-            }
+        if expected.is_none() {
+            // 尚未 initialize，自动创建 session
+            drop(expected);
+            let sid = uuid::Uuid::new_v4().to_string();
+            *state.session_id.write().await = Some(sid);
         }
     }
 
