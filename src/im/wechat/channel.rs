@@ -114,48 +114,50 @@ impl WechatChannel {
             let fwd_recent = recent;
             let fwd_id = account_id.clone();
             let fwd = tokio::spawn(async move {
-                while let Some(msg) = inner_rx.recv().await {
-                    let session_id = msg.session_id.clone();
-                    let message_id = format!("{}:{}", msg.from_user_id, msg.message_id);
+                // 延迟窗口：收到文字后等 2 秒看有没有附件一起来
+                let mut pending_text: Option<ParsedWechatMessage> = None;
+                let delay = tokio::time::Duration::from_secs(2);
 
-                    // 缓存消息内容供 aggregate_topic 使用
-                    let cached = match &msg.content {
-                        WechatMessageContent::Text(t) => RecentMessage {
-                            text: Some(t.clone()),
-                            message_id: message_id.clone(),
-                            image_key: None,
-                            file_key: None,
-                            file_name: None,
-                        },
-                        WechatMessageContent::Image { media } => RecentMessage {
-                            text: None,
-                            message_id: message_id.clone(),
-                            image_key: Some(serde_json::to_string(media).unwrap_or_default()),
-                            file_key: None,
-                            file_name: None,
-                        },
-                        WechatMessageContent::File { media, file_name, .. } => RecentMessage {
-                            text: None,
-                            message_id: message_id.clone(),
-                            image_key: None,
-                            file_key: Some(serde_json::to_string(media).unwrap_or_default()),
-                            file_name: Some(file_name.clone()),
-                        },
-                        _ => RecentMessage {
-                            text: None,
-                            message_id: message_id.clone(),
-                            image_key: None,
-                            file_key: None,
-                            file_name: None,
-                        },
+                loop {
+                    let msg = if pending_text.is_some() {
+                        // 有文字待发，带超时等下一条
+                        match tokio::time::timeout(delay, inner_rx.recv()).await {
+                            Ok(Some(m)) => Some(m),
+                            Ok(None) => break, // channel closed
+                            Err(_) => None,    // 超时，flush pending text
+                        }
+                    } else {
+                        inner_rx.recv().await
                     };
-                    fwd_recent.write().await.insert(session_id.clone(), cached);
 
-                    fwd_ctx.write().await.insert(msg.from_user_id.clone(), UserContext {
-                        context_token: msg.context_token.clone(),
-                        account_id: fwd_id.clone(),
-                    });
-                    if fwd_tx.send(convert_message(msg)).await.is_err() { break; }
+                    // 超时：flush 之前缓冲的文字消息
+                    if msg.is_none() && pending_text.is_some() {
+                        let text_msg = pending_text.take().unwrap();
+                        process_and_forward(&text_msg, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                        continue;
+                    }
+
+                    let Some(msg) = msg else { break };
+
+                    let is_text = matches!(&msg.content, WechatMessageContent::Text(_));
+
+                    if is_text {
+                        // 如果之前有缓冲的文字（不同用户或连续文字），先 flush 旧的
+                        if let Some(prev) = pending_text.take() {
+                            process_and_forward(&prev, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                        }
+                        // 缓冲新文字，等 2 秒看有没有附件跟着
+                        pending_text = Some(msg);
+                    } else {
+                        // 非文字（图片/文件）：先转发它（作为 pending attachment），
+                        // 然后如果有缓冲的文字就继续等（图片到了说明可能还有更多）
+                        process_and_forward(&msg, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                    }
+                }
+
+                // flush 残留
+                if let Some(text_msg) = pending_text.take() {
+                    process_and_forward(&text_msg, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
                 }
             });
             let result = client.listen(inner_tx).await;
@@ -334,6 +336,57 @@ impl IMChannel for WechatChannel {
 }
 
 // ── 辅助 ──────────────────────────────────────────────────────────────────
+
+/// 处理一条消息：更新 context + recent cache + 转发给上层
+async fn process_and_forward(
+    msg: &ParsedWechatMessage,
+    fwd_ctx: &Arc<RwLock<HashMap<String, UserContext>>>,
+    fwd_recent: &Arc<RwLock<HashMap<String, RecentMessage>>>,
+    fwd_id: &str,
+    fwd_tx: &mpsc::Sender<ImMessage>,
+) {
+    let session_id = msg.session_id.clone();
+    let message_id = format!("{}:{}", msg.from_user_id, msg.message_id);
+
+    let cached = match &msg.content {
+        WechatMessageContent::Text(t) => RecentMessage {
+            text: Some(t.clone()),
+            message_id: message_id.clone(),
+            image_key: None,
+            file_key: None,
+            file_name: None,
+        },
+        WechatMessageContent::Image { media } => RecentMessage {
+            text: None,
+            message_id: message_id.clone(),
+            image_key: Some(serde_json::to_string(media).unwrap_or_default()),
+            file_key: None,
+            file_name: None,
+        },
+        WechatMessageContent::File { media, file_name, .. } => RecentMessage {
+            text: None,
+            message_id: message_id.clone(),
+            image_key: None,
+            file_key: Some(serde_json::to_string(media).unwrap_or_default()),
+            file_name: Some(file_name.clone()),
+        },
+        _ => RecentMessage {
+            text: None,
+            message_id: message_id.clone(),
+            image_key: None,
+            file_key: None,
+            file_name: None,
+        },
+    };
+    fwd_recent.write().await.insert(session_id, cached);
+
+    fwd_ctx.write().await.insert(msg.from_user_id.clone(), UserContext {
+        context_token: msg.context_token.clone(),
+        account_id: fwd_id.to_string(),
+    });
+
+    let _ = fwd_tx.send(convert_message(msg.clone())).await;
+}
 
 fn convert_message(msg: ParsedWechatMessage) -> ImMessage {
     let is_text = matches!(&msg.content, WechatMessageContent::Text(_));
