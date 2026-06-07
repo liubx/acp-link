@@ -326,7 +326,14 @@ impl IMChannel for WechatChannel {
     }
 
     async fn mcp_tool_call(&self, tool_name: &str, args: &serde_json::Value) -> Result<serde_json::Value, String> {
-        // 从 args 中提取 message_id 以获取 user_id 和 context_token
+        // wechat_download_media 不需要特定用户上下文，用任意 client 即可
+        if tool_name == "wechat_download_media" {
+            let clients = self.clients.read().await;
+            let client = clients.values().next().ok_or("无可用微信账号")?;
+            return super::mcp_tools::call(tool_name, args, client, "").await;
+        }
+
+        // 其他 tools 需要从 args 提取 message_id 获取用户上下文
         let message_id = args.get("message_id").and_then(|v| v.as_str()).unwrap_or("");
         let (uid, _) = parse_mid(message_id);
 
