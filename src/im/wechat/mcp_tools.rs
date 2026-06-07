@@ -31,6 +31,24 @@ pub fn list() -> Vec<Value> {
                 "required": ["file_path", "message_id"]
             }
         }),
+        json!({
+            "name": "wechat_download_media",
+            "description": "Download a received WeChat media file (image, file, voice, video) to a local path. Use this when you need to save or process a file the user sent. The media_key is the CDNMedia JSON from the message content in the conversation.",
+            "inputSchema": {
+                "type": "object",
+                "properties": {
+                    "media_key": {
+                        "type": "string",
+                        "description": "The CDNMedia JSON string from the message content (contains encrypt_query_param and aes_key)"
+                    },
+                    "save_path": {
+                        "type": "string",
+                        "description": "Absolute path to save the downloaded file"
+                    }
+                },
+                "required": ["media_key", "save_path"]
+            }
+        }),
     ]
 }
 
@@ -43,6 +61,7 @@ pub async fn call(
 ) -> Result<Value, String> {
     match tool_name {
         "wechat_send_file" => send_file(args, client, context_token).await,
+        "wechat_download_media" => download_media_file(args, client).await,
         _ => Err(format!("unknown tool: {tool_name}")),
     }
 }
@@ -117,6 +136,31 @@ async fn send_file(
         tracing::info!("wechat_send_file: 文件已发送 to={user_id} file={file_name}");
         Ok(json!({ "status": "ok", "type": "file", "file_name": file_name }))
     }
+}
+
+/// 下载微信收到的媒体文件并保存到本地
+async fn download_media_file(args: &Value, client: &WechatClient) -> Result<Value, String> {
+    let media_key = args.get("media_key").and_then(|v| v.as_str()).unwrap_or("");
+    let save_path = args.get("save_path").and_then(|v| v.as_str()).unwrap_or("");
+
+    if media_key.is_empty() || save_path.is_empty() {
+        return Err("media_key and save_path are required".into());
+    }
+
+    let media: super::client::CDNMedia = serde_json::from_str(media_key)
+        .map_err(|e| format!("解析 media_key 失败: {e}"))?;
+
+    let data = client.download_media(&media).await
+        .map_err(|e| format!("下载文件失败: {e}"))?;
+
+    if let Some(parent) = std::path::Path::new(save_path).parent() {
+        std::fs::create_dir_all(parent).map_err(|e| format!("创建目录失败: {e}"))?;
+    }
+
+    std::fs::write(save_path, &data).map_err(|e| format!("保存文件失败: {e}"))?;
+
+    tracing::info!("wechat_download_media: 已保存 {} bytes -> {save_path}", data.len());
+    Ok(json!({ "status": "ok", "path": save_path, "size": data.len() }))
 }
 
 fn is_image_file(path: &str) -> bool {
