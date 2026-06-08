@@ -594,12 +594,40 @@ impl FeishuClient {
                             None => continue,
                         },
                         "post" => {
-                            match parse_post_content(&raw_msg.content) {
-                                Some(content) => content,
-                                None => {
-                                    tracing::debug!("飞书 WS: post 消息无有效内容，跳过");
-                                    continue;
+                            // post 图文混合：先发图片（存 pending），再发文字（触发处理）
+                            let (post_texts, post_images) = parse_post_content_all(&raw_msg.content);
+                            let has_text = !post_texts.is_empty();
+                            let merged_text = post_texts.join("\n");
+
+                            // 如果有图片且有文字，先发图片消息
+                            if !post_images.is_empty() && has_text {
+                                let timestamp = std::time::SystemTime::now()
+                                    .duration_since(std::time::UNIX_EPOCH)
+                                    .unwrap_or_default()
+                                    .as_secs();
+                                let root_id = raw_msg.root_id.as_ref().filter(|s| !s.is_empty()).cloned();
+                                for image_key in &post_images {
+                                    let img_msg = FeishuMessage {
+                                        message_id: raw_msg.message_id.clone(),
+                                        chat_id: raw_msg.chat_id.clone(),
+                                        chat_type: raw_msg.chat_type.clone(),
+                                        sender_open_id: sender_open_id.clone(),
+                                        content: MessageContent::Image { image_key: image_key.clone() },
+                                        timestamp,
+                                        root_id: root_id.clone(),
+                                    };
+                                    let _ = tx.send(img_msg).await;
                                 }
+                            }
+
+                            // 返回文字内容（如果有），否则返回第一张图片
+                            if has_text {
+                                MessageContent::Text(merged_text)
+                            } else if let Some(first_img) = post_images.into_iter().next() {
+                                MessageContent::Image { image_key: first_img }
+                            } else {
+                                tracing::debug!("飞书 WS: post 消息无有效内容，跳过");
+                                continue;
                             }
                         }
                         "image"   => parse_image_content(&raw_msg.content),
@@ -1400,6 +1428,7 @@ fn parse_image_content(content: &str) -> MessageContent {
 ///
 /// 优先提取图片（返回 `Image`），无图片时合并文字（返回 `Text`），
 /// 都没有则返回 `None`。
+#[allow(dead_code)]
 fn parse_post_content(content: &str) -> Option<MessageContent> {
     let v: serde_json::Value = serde_json::from_str(content).unwrap_or_default();
 
@@ -1457,15 +1486,15 @@ fn parse_post_content(content: &str) -> Option<MessageContent> {
         }
     }
 
-    // 优先返回图片
-    if let Some(image_key) = first_image_key {
-        return Some(MessageContent::Image { image_key });
-    }
-
-    // 无图片时返回合并文字
+    // 如果同时有文字和图片，先返回文字（图片通过 channel 层额外发一条 Image 消息）
     if !text_parts.is_empty() {
         let merged = text_parts.join("\n");
         return Some(MessageContent::Text(merged));
+    }
+
+    // 纯图片无文字
+    if let Some(image_key) = first_image_key {
+        return Some(MessageContent::Image { image_key });
     }
 
     None

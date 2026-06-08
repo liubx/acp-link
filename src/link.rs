@@ -343,7 +343,8 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
                         .or_default()
                         .push(att);
                 }
-                "收到附件，请回复文字指令来处理它"
+                // 静默存储，不回复提示（避免打扰用户）
+                return;
             };
             match state.channel.reply_message(&msg.message_id, hint).await {
                 Ok((reply_msg_id, thread_id)) => {
@@ -402,13 +403,7 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
                                     .push(att);
                             }
                         }
-                        if let Err(e) = state
-                            .channel
-                            .reply_message(&msg.message_id, "收到附件，请回复文字指令来处理它")
-                            .await
-                        {
-                            tracing::error!("回复附件提示失败: {e}");
-                        }
+                        // 静默存储，不回复提示
                     }
                 }
                 None => {
