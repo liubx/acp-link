@@ -17,3 +17,4 @@ pub mod config;
 pub mod im;
 pub mod link;
 pub mod mcp;
+pub mod api;

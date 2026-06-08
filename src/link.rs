@@ -21,6 +21,9 @@ mod cron;
 mod resource;
 mod session;
 
+// Re-export 供 api.rs 使用
+pub use self::acp::{AcpBridge, StreamEvent};
+
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -31,7 +34,6 @@ use tokio::time::{Duration, Instant};
 
 use std::collections::{HashMap, HashSet};
 
-use self::acp::{AcpBridge, StreamEvent};
 use self::resource::ResourceStore;
 use self::session::SessionMap;
 
@@ -97,12 +99,13 @@ impl LinkService {
         let bridge = AcpBridge::start(&config.backend).await?;
         let cwd = config.backend.effective_cwd();
 
-        // 启动内嵌 MCP HTTP Server
+        // 启动内嵌 HTTP Server（MCP + API）
         let mcp_channel = channel.clone();
         let mcp_port = config.mcp.port;
+        let api_routes = crate::api::api_routes(bridge.clone(), cwd.clone());
         tokio::spawn(async move {
-            if let Err(e) = crate::mcp::start_mcp_server(mcp_channel, mcp_port).await {
-                tracing::error!("MCP Server 异常退出: {e}");
+            if let Err(e) = crate::mcp::start_mcp_server(mcp_channel, mcp_port, Some(api_routes)).await {
+                tracing::error!("HTTP Server 异常退出: {e}");
             }
         });
 

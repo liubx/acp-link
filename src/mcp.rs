@@ -43,24 +43,33 @@ struct McpState {
 }
 
 /// 启动 MCP HTTP Server（作为后台 task 运行）
-pub async fn start_mcp_server(channel: Arc<dyn IMChannel>, port: u16) -> Result<()> {
+pub async fn start_mcp_server(
+    channel: Arc<dyn IMChannel>,
+    port: u16,
+    extra_routes: Option<Router>,
+) -> Result<()> {
     let state = Arc::new(McpState {
         channel,
         session_id: RwLock::new(None),
     });
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/mcp", post(handle_post))
         .route("/mcp", get(handle_get))
         .route("/mcp", delete(handle_delete))
         .with_state(state);
 
-    let listener = tokio::net::TcpListener::bind(("127.0.0.1", port)).await?;
-    tracing::info!("MCP HTTP Server 监听: http://127.0.0.1:{port}/mcp");
+    // 合并额外路由（如 /api/ask）
+    if let Some(extra) = extra_routes {
+        app = app.merge(extra);
+    }
+
+    let listener = tokio::net::TcpListener::bind(("0.0.0.0", port)).await?;
+    tracing::info!("HTTP Server 监听: http://0.0.0.0:{port}");
 
     axum::serve(listener, app)
         .await
-        .map_err(|e| anyhow::anyhow!("MCP server 退出: {e}"))
+        .map_err(|e| anyhow::anyhow!("HTTP server 退出: {e}"))
 }
 
 /// POST /mcp — 接收 JSON-RPC 请求
