@@ -1,6 +1,6 @@
 [package]
 name = "acp-link"
-version = "0.2.14"
+version = "0.2.16"
 edition = "2024"
 
 [dependencies]
