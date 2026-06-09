@@ -30,6 +30,10 @@ pub struct WechatChannel {
     recent_messages: Arc<RwLock<HashMap<String, RecentMessage>>>,
     /// 待登录的账号名称列表
     pending_accounts: Arc<RwLock<Vec<String>>>,
+    /// typing 状态：user_id → 是否活跃
+    typing_active: Arc<RwLock<HashMap<String, bool>>>,
+    /// typing_ticket 缓存：user_id → ticket
+    typing_tickets: Arc<RwLock<HashMap<String, String>>>,
     store: TokenStore,
 }
 
@@ -95,6 +99,8 @@ impl WechatChannel {
             recent_messages: Arc::new(RwLock::new(HashMap::new())),
             store,
             pending_accounts: Arc::new(RwLock::new(missing)),
+            typing_active: Arc::new(RwLock::new(HashMap::new())),
+            typing_tickets: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
@@ -224,13 +230,39 @@ impl IMChannel for WechatChannel {
 
     async fn reply_message(&self, message_id: &str, _markdown: &str) -> anyhow::Result<(String, String)> {
         let (uid, _) = parse_mid(message_id);
-        // 后台发 typing（best effort）
+        // 后台持续发 typing 直到 update_message 被调用
         if let Ok((c, ct)) = self.resolve_client(&uid).await {
             let c2 = c.clone();
             let uid2 = uid.clone();
             let ct2 = ct.clone();
+            let typing_active = self.typing_active.clone();
+            let typing_tickets = self.typing_tickets.clone();
+            let key = uid.clone();
+            typing_active.write().await.insert(key.clone(), true);
+
             tokio::spawn(async move {
-                if let Ok(Some(ticket)) = c2.get_typing_ticket(&uid2, &ct2).await {
+                // 获取或缓存 typing_ticket
+                let ticket = {
+                    let cached = typing_tickets.read().await.get(&uid2).cloned();
+                    if let Some(t) = cached {
+                        t
+                    } else {
+                        match c2.get_typing_ticket(&uid2, &ct2).await {
+                            Ok(Some(t)) => {
+                                typing_tickets.write().await.insert(uid2.clone(), t.clone());
+                                t
+                            }
+                            _ => return,
+                        }
+                    }
+                };
+                // 立即发第一次 typing
+                let _ = c2.send_typing(&uid2, &ticket, 1).await;
+                // 持续刷新（每 10 秒）
+                loop {
+                    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                    let active = typing_active.read().await.get(&key).copied().unwrap_or(false);
+                    if !active { break; }
                     let _ = c2.send_typing(&uid2, &ticket, 1).await;
                 }
             });
@@ -241,8 +273,17 @@ impl IMChannel for WechatChannel {
 
     async fn update_message(&self, message_id: &str, markdown: &str) -> anyhow::Result<()> {
         let (uid, _) = parse_mid(message_id);
+        // 停止 typing
+        self.typing_active.write().await.remove(&uid);
+
         let (c, ct) = self.resolve_client(&uid).await?;
-        // 上层已保证微信平台只在流结束时调一次，直接发
+        // 立即取消 typing（用缓存的 ticket）
+        let ticket = self.typing_tickets.read().await.get(&uid).cloned();
+        if let Some(ref t) = ticket {
+            let _ = c.send_typing(&uid, t, 2).await;
+        } else if let Ok(Some(t)) = c.get_typing_ticket(&uid, &ct).await {
+            let _ = c.send_typing(&uid, &t, 2).await;
+        }
         c.send_text(&uid, markdown, &ct).await?;
         Ok(())
     }
