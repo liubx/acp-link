@@ -115,8 +115,12 @@ fn default_resource_retention() -> u32 {
     7
 }
 
-/// 返回 `~/.acp-link/` 目录路径
+/// 返回数据根目录路径
+/// 优先使用环境变量 `ACP_LINK_HOME`，否则默认 `~/.acp-link/`
 fn default_home_dir() -> PathBuf {
+    if let Ok(home) = std::env::var("ACP_LINK_HOME") {
+        return PathBuf::from(home);
+    }
     dirs::home_dir()
         .unwrap_or_else(|| PathBuf::from("."))
         .join(".acp-link")

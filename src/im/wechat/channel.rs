@@ -52,10 +52,14 @@ impl WechatChannel {
     ///
     /// `accounts`: 配置中声明的期望账号名称列表
     pub fn new(accounts: &[String]) -> Self {
-        let root = dirs::home_dir()
-            .unwrap_or_else(|| PathBuf::from("."))
-            .join(".acp-link")
-            .join("wechat");
+        let root = if let Ok(home) = std::env::var("ACP_LINK_HOME") {
+            PathBuf::from(home).join("wechat")
+        } else {
+            dirs::home_dir()
+                .unwrap_or_else(|| PathBuf::from("."))
+                .join(".acp-link")
+                .join("wechat")
+        };
         std::fs::create_dir_all(&root).ok();
 
         let store = TokenStore::new(&root);
