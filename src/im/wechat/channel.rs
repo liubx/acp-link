@@ -352,7 +352,11 @@ async fn process_and_forward(
     fwd_id: &str,
     fwd_tx: &mpsc::Sender<ImMessage>,
 ) {
-    let session_id = msg.session_id.clone();
+    let session_id = if msg.session_id.is_empty() {
+        msg.from_user_id.clone()
+    } else {
+        msg.session_id.clone()
+    };
     let message_id = format!("{}:{}", msg.from_user_id, msg.message_id);
 
     let cached = match &msg.content {
@@ -397,16 +401,20 @@ async fn process_and_forward(
 
 fn convert_message(msg: ParsedWechatMessage) -> ImMessage {
     let is_text = matches!(&msg.content, WechatMessageContent::Text(_));
+    // session_id 为空时 fallback 到 from_user_id
+    let effective_session = if msg.session_id.is_empty() {
+        msg.from_user_id.clone()
+    } else {
+        msg.session_id.clone()
+    };
     ImMessage {
         message_id: format!("{}:{}", msg.from_user_id, msg.message_id),
-        chat_id: msg.session_id.clone(),
+        chat_id: effective_session.clone(),
         chat_type: "p2p".into(),
         sender_id: msg.from_user_id,
         content: convert_content(msg.content),
         timestamp: msg.timestamp_ms / 1000,
-        // 文字消息带 topic_id 路由到已有 session；
-        // 图片/文件等走 None 路径，存入 chat pending 等后续文字触发
-        topic_id: if is_text { Some(msg.session_id) } else { None },
+        topic_id: if is_text { Some(effective_session) } else { None },
     }
 }
 

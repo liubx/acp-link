@@ -580,7 +580,9 @@ impl WechatClient {
             return None;
         }
         let message_id = msg.message_id.map(|id| id.to_string()).unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-        let session_id = msg.session_id.clone().unwrap_or_else(|| from_user_id.clone());
+        let session_id = msg.session_id.clone()
+            .filter(|s| !s.is_empty())
+            .unwrap_or_else(|| from_user_id.clone());
         let context_token = msg.context_token.clone().unwrap_or_default();
         let timestamp_ms = msg.create_time_ms.unwrap_or(0);
 
