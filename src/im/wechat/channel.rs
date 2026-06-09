@@ -62,6 +62,10 @@ impl WechatChannel {
             if td.account_id.is_empty() {
                 continue;
             }
+            // 只加载 config 中声明的账号（accounts 为空时加载全部——向后兼容）
+            if !accounts.is_empty() && !td.name.is_empty() && !accounts.contains(&td.name) {
+                continue;
+            }
             let label = if td.name.is_empty() { &td.account_id } else { &td.name };
             let client = WechatClient::from_token(td, store.clone());
             tracing::info!("加载微信账号: {label}");
