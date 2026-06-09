@@ -66,6 +66,8 @@ struct SharedState {
     pending_attachments: RwLock<HashMap<String, Vec<PendingAttachment>>>,
     /// 需要中止的 reply_message_id 集合（表情回复触发）
     abort_set: RwLock<HashSet<String>>,
+    /// 消息去重：最近处理过的 message_id
+    processed_messages: RwLock<std::collections::VecDeque<String>>,
     /// 工作目录，传递给 ACP session
     cwd: PathBuf,
     /// Session 保留天数
@@ -133,6 +135,7 @@ impl LinkService {
                 loaded_sessions: RwLock::new(HashSet::new()),
                 pending_attachments: RwLock::new(HashMap::new()),
                 abort_set: RwLock::new(HashSet::new()),
+                processed_messages: RwLock::new(std::collections::VecDeque::new()),
                 cwd,
                 session_retention: config.session_retention,
                 resource_retention: config.resource_retention,
@@ -319,6 +322,19 @@ fn cleanup_temp_dir(retention: u32) -> Result<usize> {
 
 /// 处理单条 IM 消息：根据是否有 topic 上下文决定新建会话或增量追加
 async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
+    // 消息去重
+    {
+        let mut processed = state.processed_messages.write().await;
+        if processed.contains(&msg.message_id) {
+            tracing::info!("消息去重跳过: {}", msg.message_id);
+            return;
+        }
+        processed.push_back(msg.message_id.clone());
+        if processed.len() > 1000 {
+            processed.pop_front();
+        }
+    }
+
     tracing::info!(
         "[{}] {} message_id: {}",
         msg.chat_id,
