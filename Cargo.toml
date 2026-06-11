@@ -27,6 +27,9 @@ agent-client-protocol = "0.10.4"
 base64 = "0.22.1"
 axum = "0.8"
 async-stream = "0.3"
+pulldown-cmark = "0.12"
+mime_guess = "2"
+tower = "0.5"
 uuid = { version = "1.23.0", features = ["v4"] }
 tokio-cron-scheduler = { version = "0.15.1", features = ["signal"] }
 # 微信 ClawBot (iLink) 相关依赖
