@@ -57,7 +57,8 @@ pub async fn start_mcp_server(
         .route("/mcp", post(handle_post))
         .route("/mcp", get(handle_get))
         .route("/mcp", delete(handle_delete))
-        .with_state(state);
+        .with_state(state)
+        .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024)); // 50MB
 
     // 合并额外路由（如 /api/ask）
     if let Some(extra) = extra_routes {

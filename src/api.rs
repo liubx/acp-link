@@ -16,6 +16,8 @@ use axum::routing::post;
 use tokio::sync::RwLock;
 
 use crate::link::{AcpBridge, StreamEvent};
+use crate::chat::CHAT_WIDGET;
+use base64::Engine;
 
 /// API Server 共享状态
 struct ApiState {
@@ -35,7 +37,9 @@ pub fn api_routes(bridge: AcpBridge, cwd: PathBuf) -> Router {
 
     Router::new()
         .route("/api/ask", post(handle_ask))
+        .route("/api/upload", post(handle_upload))
         .with_state(state)
+        .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024))
         .fallback_service(NotesService { root: cwd })
 }
 
@@ -218,7 +222,7 @@ h2 .current{{color:var(--fg);font-weight:600}}
 <div class="list">
 <h2><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</h2>
 {items_html}
-</div></body></html>"#
+</div>{CHAT_WIDGET}</body></html>"#
     );
 
     Html(html)
@@ -264,6 +268,20 @@ function updateIcon(){
 }
 document.addEventListener('DOMContentLoaded',updateIcon);
 </script>"#;
+
+/// 解析 data URI，返回 (mime, base64_data)
+fn parse_data_uri(input: &str) -> (String, &str) {
+    if let Some(comma_pos) = input.find(',') {
+        let header = &input[..comma_pos];
+        let mime = header
+            .strip_prefix("data:")
+            .and_then(|s| s.strip_suffix(";base64"))
+            .unwrap_or("image/png");
+        (mime.to_string(), &input[comma_pos + 1..])
+    } else {
+        ("image/png".to_string(), input)
+    }
+}
 
 /// 将 Markdown 渲染为带样式的 HTML 页面（含面包屑导航）
 fn render_markdown(md: &str, relative: &str) -> String {
@@ -326,13 +344,88 @@ body{{max-width:900px;margin:0 auto;padding:60px 20px 80px;font-family:-apple-sy
 <button class="theme-toggle" onclick="toggleTheme()"></button>
 <div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div></div>
 <div class="content">{html_output}</div>
-</body></html>"#)
+{CHAT_WIDGET}</body></html>"#)
 }
 
 #[derive(serde::Deserialize)]
 struct AskBody {
+    /// 简单模式：纯文字提问
     question: Option<String>,
     session: Option<String>,
+    /// 有序 blocks（图文混排模式）
+    #[serde(default)]
+    blocks: Vec<AskBlock>,
+    /// 兼容旧格式
+    #[serde(default)]
+    images: Vec<String>,
+    #[serde(default)]
+    files: Vec<AskFile>,
+    context_path: Option<String>,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(tag = "type")]
+enum AskBlock {
+    #[serde(rename = "text")]
+    Text { content: String },
+    #[serde(rename = "image")]
+    Image { data: String },
+    #[serde(rename = "file")]
+    File { name: String, data: String },
+}
+
+#[derive(serde::Deserialize)]
+struct AskFile {
+    name: String,
+    data: String,
+}
+
+/// POST /api/upload — 上传文件到 .uploads/，返回服务端路径
+async fn handle_upload(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    let upload_dir = state.cwd.join(".uploads");
+    let _ = std::fs::create_dir_all(&upload_dir);
+
+    // 从 header 取文件名
+    let filename = headers.get("x-filename")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| urlencoding::decode(s).unwrap_or_default().to_string())
+        .unwrap_or_else(|| format!("upload-{}", uuid::Uuid::new_v4()));
+
+    let safe_name = filename.replace('/', "_").replace('\\', "_");
+    // 加时间戳避免覆盖
+    let ts = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap_or_default().as_millis();
+    let final_name = format!("{ts}-{safe_name}");
+    let file_path = upload_dir.join(&final_name);
+
+    if let Err(e) = std::fs::write(&file_path, &body) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, format!("写入失败: {e}")).into_response();
+    }
+
+    let path_str = file_path.to_string_lossy().to_string();
+    let is_image = safe_name.to_lowercase().ends_with(".png")
+        || safe_name.to_lowercase().ends_with(".jpg")
+        || safe_name.to_lowercase().ends_with(".jpeg")
+        || safe_name.to_lowercase().ends_with(".gif")
+        || safe_name.to_lowercase().ends_with(".webp")
+        || safe_name.to_lowercase().ends_with(".bmp");
+
+    let resp = serde_json::json!({
+        "path": path_str,
+        "name": safe_name,
+        "size": body.len(),
+        "is_image": is_image,
+    });
+
+    Response::builder()
+        .status(StatusCode::OK)
+        .header("content-type", "application/json")
+        .header("access-control-allow-origin", "*")
+        .body(Body::from(resp.to_string()))
+        .unwrap()
 }
 
 /// POST /api/ask — SSE 流式问答
@@ -343,6 +436,10 @@ async fn handle_ask(
     let parsed: AskBody = serde_json::from_str(&body).unwrap_or(AskBody {
         question: Some(body.clone()),
         session: None,
+        blocks: vec![],
+        images: vec![],
+        files: vec![],
+        context_path: None,
     });
     let question = parsed.question.unwrap_or(body);
     let chat_id = parsed.session.unwrap_or_else(|| "default".to_string());
@@ -378,8 +475,93 @@ async fn handle_ask(
         }
     };
 
-    // 构建 prompt
-    let blocks = vec![AcpBridge::text_block(&question)];
+    // 构建 prompt blocks
+    let mut blocks = Vec::new();
+
+    // 添加上下文路径提示
+    if let Some(ref ctx_path) = parsed.context_path {
+        if !ctx_path.is_empty() {
+            blocks.push(AcpBridge::text_block(&format!("[context_path: {}]", ctx_path)));
+        }
+    }
+
+    if !parsed.blocks.is_empty() {
+        // 有序 blocks 模式（图文混排）
+        let upload_dir = state.cwd.join(".uploads");
+        let _ = std::fs::create_dir_all(&upload_dir);
+
+        for block in &parsed.blocks {
+            match block {
+                AskBlock::Text { content } => {
+                    if !content.is_empty() {
+                        blocks.push(AcpBridge::text_block(content));
+                    }
+                }
+                AskBlock::Image { data } => {
+                    // data 可以是 base64 data URI 或服务端文件路径
+                    if data.starts_with("/") || data.starts_with("./") {
+                        // 本地文件路径——直接读取
+                        if let Ok(bytes) = std::fs::read(&data) {
+                            let ext = std::path::Path::new(data.as_str()).extension().and_then(|e| e.to_str()).unwrap_or("png");
+                            let mime = format!("image/{}", ext);
+                            blocks.push(AcpBridge::image_block(&bytes, &mime));
+                        }
+                    } else {
+                        let (mime, raw) = parse_data_uri(&data);
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(raw) {
+                            blocks.push(AcpBridge::image_block(&bytes, &mime));
+                        }
+                    }
+                }
+                AskBlock::File { name, data } => {
+                    // data 可以是 base64 data URI 或服务端文件路径
+                    let file_path = if data.starts_with("/") || data.starts_with("./") {
+                        PathBuf::from(&data)
+                    } else {
+                        let (_, raw) = parse_data_uri(&data);
+                        if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(raw) {
+                            let safe_name = name.replace('/', "_").replace('\\', "_");
+                            let p = upload_dir.join(&safe_name);
+                            let _ = std::fs::write(&p, &bytes);
+                            p
+                        } else {
+                            continue;
+                        }
+                    };
+                    blocks.push(AcpBridge::text_block(&format!(
+                        "[attached_file: {} ({})]", file_path.display(), name
+                    )));
+                }
+            }
+        }
+    } else {
+        // 兼容旧格式：question + images + files
+        blocks.push(AcpBridge::text_block(&question));
+
+        for img_b64 in &parsed.images {
+            let (mime, raw) = parse_data_uri(img_b64);
+            if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(raw) {
+                blocks.push(AcpBridge::image_block(&bytes, &mime));
+            }
+        }
+
+        if !parsed.files.is_empty() {
+            let upload_dir = state.cwd.join(".uploads");
+            let _ = std::fs::create_dir_all(&upload_dir);
+            for file in &parsed.files {
+                let (_, raw) = parse_data_uri(&file.data);
+                if let Ok(bytes) = base64::engine::general_purpose::STANDARD.decode(raw) {
+                    let safe_name = file.name.replace('/', "_").replace('\\', "_");
+                    let file_path = upload_dir.join(&safe_name);
+                    if std::fs::write(&file_path, &bytes).is_ok() {
+                        blocks.push(AcpBridge::text_block(&format!(
+                            "[attached_file: {} ({})]", file_path.display(), safe_name
+                        )));
+                    }
+                }
+            }
+        }
+    }
 
     // 发送 prompt 并获取流
     let rx = match state.bridge.prompt_stream(&chat_id, &session_id, blocks).await {

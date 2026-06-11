@@ -18,3 +18,4 @@ pub mod im;
 pub mod link;
 pub mod mcp;
 pub mod api;
+mod chat;
