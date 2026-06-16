@@ -246,8 +246,8 @@ fn render_directory(dir_path: &PathBuf, relative: &str) -> Html<String> {
 <script>{theme_js}</script>
 </head><body class="page-directory">
 <button class="theme-toggle" onclick="toggleTheme()"></button>
-<div class="list">
-<h2><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</h2>
+<div class="pathbar"><a href="/" class="home">~</a>{breadcrumb}</div>
+<div class="file-list">
 {items_html}
 </div>{chat_widget}</body></html>"#,
         relative = relative,
@@ -310,7 +310,7 @@ fn render_markdown(md: &str, relative: &str) -> String {
 <script>{theme_js}</script>
 </head><body class="page-markdown">
 <button class="theme-toggle" onclick="toggleTheme()"></button>
-<div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div></div>
+<div class="pathbar"><a href="/" class="home">~</a>{breadcrumb}</div>
 <div class="content">{html_output}</div>
 {chat_widget}</body></html>"#,
         relative = relative,
@@ -406,7 +406,8 @@ fn render_code_file(content: &str, ext: &str, relative: &str) -> String {
 <script>{theme_js}</script>
 </head><body class="page-code">
 <button class="theme-toggle" onclick="toggleTheme()"></button>
-<div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div><div class="nav-meta">{line_count} 行 · {size_str} · {ext}</div></div>
+<div class="pathbar"><a href="/" class="home">~</a>{breadcrumb}</div>
+<div class="meta-row">{line_count} lines · {size_str} · .{ext}</div>
 <div class="code-wrap"><pre>{code_html}</pre></div>
 {chat_widget}</body></html>"#,
         relative = relative,

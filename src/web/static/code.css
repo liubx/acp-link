@@ -1,38 +1,24 @@
-/* === Code File Viewer === */
+/* === Code Viewer === */
 .page-code {
-  max-width: 920px;
+  max-width: 900px;
   margin: 0 auto;
-  padding: 72px 20px 100px;
+  padding: 56px 20px 100px;
   min-height: 100dvh;
 }
 
 .code-wrap {
-  background: #1e2127;
+  background: #1e1e2e;
   border: 1px solid var(--border);
-  border-top: none;
-  border-radius: 0 0 var(--radius) var(--radius);
+  border-radius: var(--radius);
   overflow: hidden;
-  box-shadow: var(--shadow);
-  position: relative;
 }
-/* 顶部渐变装饰线 */
-.code-wrap::before {
-  content: '';
-  position: absolute;
-  top: 0;
-  left: 0;
-  right: 0;
-  height: 1px;
-  background: linear-gradient(90deg, transparent, var(--accent-glow), transparent);
-}
-
 .code-wrap pre {
   margin: 0;
   padding: 0;
   overflow-x: auto;
-  font-family: var(--font-mono);
-  font-size: .8em;
-  line-height: 1.75;
+  font-family: var(--mono);
+  font-size: 13px;
+  line-height: 1.7;
   tab-size: 4;
 }
 
@@ -50,36 +36,29 @@
   min-width: 48px;
   padding: 0 14px 0 18px;
   text-align: right;
-  color: #4a5568;
+  color: #4a4a5a;
   user-select: none;
   -webkit-user-select: none;
-  font-size: .85em;
+  font-size: 12px;
   border-right: 1px solid rgba(255, 255, 255, .04);
-  transition: color .1s ease;
-}
-.code-table tr:hover .ln {
-  color: #8b949e;
 }
 .code-table .code {
-  padding: 0 18px;
+  padding: 0 20px;
 }
 .code-table tr:first-child .ln,
-.code-table tr:first-child .code { padding-top: 18px; }
+.code-table tr:first-child .code { padding-top: 16px; }
 .code-table tr:last-child .ln,
-.code-table tr:last-child .code { padding-bottom: 18px; }
-
-/* hover 行高亮 */
-.code-table tr:hover {
-  background: rgba(99, 102, 241, .04);
-}
+.code-table tr:last-child .code { padding-bottom: 16px; }
+.code-table tr:hover { background: rgba(34, 211, 238, .03); }
+.code-table tr:hover .ln { color: #7a7a8a; }
 
 /* === Responsive === */
 @media (max-width: 600px) {
-  .page-code { padding: 48px 14px 80px; }
-  .code-wrap pre { font-size: .76em; }
-  .code-table .ln { min-width: 36px; padding: 0 8px 0 12px; font-size: .8em; }
+  .page-code { padding: 40px 12px 80px; }
+  .code-wrap pre { font-size: 12px; }
+  .code-table .ln { min-width: 36px; padding: 0 8px 0 10px; }
   .code-table .code { padding: 0 12px; }
 }
 @media (min-width: 1024px) {
-  .page-code { max-width: 1000px; padding: 96px 40px 120px; }
+  .page-code { max-width: 960px; }
 }

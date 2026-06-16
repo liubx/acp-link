@@ -1,140 +1,82 @@
 /* === Directory Listing === */
 .page-directory {
-  max-width: 640px;
+  max-width: 600px;
   margin: 0 auto;
-  padding: 72px 20px 100px;
+  padding: 56px 20px 100px;
   min-height: 100dvh;
 }
 
-.list {
+/* === File List === */
+.file-list {
+  border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
-  background: var(--card-bg);
-  border: 1px solid var(--border);
-  box-shadow: var(--shadow);
-  transition: box-shadow .3s ease;
-}
-.list:hover {
-  box-shadow: var(--shadow), 0 0 0 1px var(--accent-glow);
+  background: var(--surface);
 }
 
-.list h2 {
-  font-size: .78em;
-  font-weight: 500;
-  color: var(--muted);
-  margin: 0;
-  padding: 12px 20px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  border-bottom: 1px solid var(--border);
-  letter-spacing: .02em;
-  text-transform: none;
-}
-.list h2 a { color: var(--muted); }
-.list h2 a:hover { color: var(--accent-light); }
-
-/* === File Entry === */
 .entry {
   display: block;
-  padding: 11px 20px 11px 32px;
+  padding: 10px 14px;
   border-bottom: 1px solid var(--border);
-  position: relative;
-  transition: background .15s ease;
+  transition: background .1s var(--ease);
 }
 .entry:last-child { border-bottom: none; }
-
-/* 左侧类型指示条 */
-.entry::before {
-  content: '';
-  position: absolute;
-  left: 14px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 3px;
-  height: 18px;
-  border-radius: 1.5px;
-  background: var(--border);
-  transition: height .2s ease, opacity .15s ease;
-}
-.entry.dir::before { background: #eab308; }
-.entry.md::before { background: var(--accent); }
-.entry.config::before { background: #10b981; }
-.entry.code::before { background: #ec4899; }
-.entry.image::before { background: #8b5cf6; }
-.entry.file::before { background: var(--muted); opacity: .3; }
-
-.entry:hover { background: var(--hover-bg); }
-.entry:hover::before { height: 24px; }
-.entry:active { opacity: .85; }
+.entry:hover { background: var(--hover); }
+.entry:active { opacity: .8; }
 
 .entry a {
   text-decoration: none;
   color: var(--fg);
-  font-size: .85em;
-  font-weight: 400;
+  font-size: 13px;
   display: flex;
   align-items: center;
   gap: 10px;
-  transition: color .12s ease;
 }
-.entry:hover a { color: var(--fg); }
-.entry.dir a { font-weight: 500; }
+.entry:hover a { color: var(--fg); text-decoration: none; }
 
-/* 文件类型图标 */
+/* 文件类型颜色标记 - 用文件名后缀色块 */
 .entry a::before {
   content: '';
-  display: inline-block;
-  width: 18px;
-  height: 18px;
+  display: block;
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
   flex-shrink: 0;
-  background: center/contain no-repeat;
-  opacity: .75;
 }
-.entry.dir a::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23eab308'%3E%3Cpath d='M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z'/%3E%3C/svg%3E");
-}
-.entry.md a::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM8 13h8v1.5H8V13zm0 3.5h5V18H8v-1.5z'/%3E%3C/svg%3E");
-}
-.entry.config a::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM8 13h8v1.5H8V13zm0 3h6v1.5H8V16z'/%3E%3C/svg%3E");
-}
-.entry.code a::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23ec4899'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM9.4 12.6l-2.4 2.4 2.4 2.4-.8.8L5.4 15l3.2-3.2.8.8zm5.2 0l2.4 2.4-2.4 2.4.8.8 3.2-3.2-3.2-3.2-.8.8z'/%3E%3C/svg%3E");
-}
-.entry.image a::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238b5cf6'%3E%3Cpath d='M4 4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h16v8.6l-3.3-3.3a1 1 0 00-1.4 0L10 16.6l-2.3-2.3a1 1 0 00-1.4 0L4 16.6V6zm4 2a2 2 0 100 4 2 2 0 000-4z'/%3E%3C/svg%3E");
-}
-.entry.file a::before {
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5z'/%3E%3C/svg%3E");
-  opacity: .55;
-}
+.entry.dir a { font-weight: 500; }
+.entry.dir a::before { background: #eab308; border-radius: 2px; }
+.entry.md a::before { background: var(--accent); }
+.entry.config a::before { background: #10b981; }
+.entry.code a::before { background: #f472b6; }
+.entry.image a::before { background: #8b5cf6; }
+.entry.file a::before { background: var(--dim); opacity: .5; }
 
-/* 文件夹右箭头 */
+/* 文件夹 chevron */
 .entry.dir a::after {
   content: '';
-  display: inline-block;
-  width: 12px;
-  height: 12px;
   margin-left: auto;
-  flex-shrink: 0;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236b7280'%3E%3Cpath fill-rule='evenodd' d='M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z'/%3E%3C/svg%3E") center/contain no-repeat;
+  width: 14px;
+  height: 14px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23a1a1aa'%3E%3Cpath d='M6.22 4.22a.75.75 0 011.06 0l3.25 3.25a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 010-1.06z'/%3E%3C/svg%3E") center/contain no-repeat;
   opacity: 0;
-  transform: translateX(-4px);
-  transition: all .15s ease;
+  transition: opacity .1s;
 }
-.entry.dir:hover a::after { opacity: .5; transform: translateX(0); }
+.entry.dir:hover a::after { opacity: 1; }
+
+/* 文件大小/时间（如果有） */
+.entry .size {
+  margin-left: auto;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--dim);
+}
 
 /* === Responsive === */
 @media (max-width: 600px) {
-  .page-directory { padding: 48px 14px 80px; }
-  .list { border-radius: 10px; }
-  .entry { padding: 13px 14px 13px 26px; }
-  .entry a { font-size: .84em; gap: 8px; }
-  .entry a::before { width: 16px; height: 16px; }
-  .list h2 { padding: 10px 14px; font-size: .76em; }
+  .page-directory { padding: 40px 12px 80px; }
+  .entry { padding: 11px 12px; }
+  .entry a { font-size: 13px; gap: 8px; }
 }
 @media (min-width: 1024px) {
-  .page-directory { max-width: 700px; padding: 96px 32px 120px; }
+  .page-directory { max-width: 640px; }
 }
