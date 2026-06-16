@@ -11,7 +11,7 @@ export function App() {
     <>
       <ThemeToggle />
       <Switch>
-        {/* 所有路径都经过 FilePage 组件动态判断展示 */}
+        <Route path="/" component={FilePage} />
         <Route path="/:rest*" component={FilePage} />
       </Switch>
       <Chat />
@@ -73,7 +73,7 @@ function FilePage({ params }: { params: { rest?: string } }) {
       <div className="max-w-[900px] mx-auto px-4 sm:px-5 pt-12 sm:pt-14">
         <Pathbar path={info.path} />
       </div>
-      {info.type === 'directory' && <Directory entries={info.entries || []} />}
+      {info.type === 'directory' && <Directory entries={info.entries || []} basePath={path} />}
       {info.type === 'markdown' && <Document content={info.content || ''} />}
       {info.type === 'code' && (
         <CodeView
