@@ -18,6 +18,10 @@ use tokio::sync::{RwLock, broadcast};
 use crate::link::{AcpBridge, StreamEvent};
 use crate::chat::chat_widget;
 use base64::Engine;
+use include_dir::{include_dir, Dir};
+
+/// 编译时嵌入的前端 SPA 静态文件（web/dist/）
+static WEB_DIST: Dir = include_dir!("$CARGO_MANIFEST_DIR/web/dist");
 
 /// 编译时嵌入的静态资源
 const STYLE_CSS: &str = include_str!("web/static/style.css");
@@ -96,9 +100,48 @@ impl tower::Service<Request> for NotesService {
         let path = req.uri().path().to_string();
 
         Box::pin(async move {
+            // 优先尝试从嵌入的前端 SPA 文件中响应
+            if let Some(resp) = serve_spa_file(&path) {
+                return Ok(resp);
+            }
+            // 否则 fallback 到原来的笔记文件渲染
             Ok(serve_notes_file(&root, &path).await)
         })
     }
+}
+
+/// 从嵌入的 SPA 静态文件中响应（assets 精确匹配，其他路径返回 index.html）
+fn serve_spa_file(path: &str) -> Option<Response> {
+    let relative = path.trim_start_matches('/');
+
+    // 如果请求的是静态资源文件（JS/CSS/图片等），精确匹配
+    if relative.starts_with("assets/") || relative == "favicon.ico" {
+        let file = WEB_DIST.get_file(relative)?;
+        let mime = mime_guess::from_path(relative).first_or_octet_stream().to_string();
+        return Some(
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", mime)
+                .header("cache-control", "public, max-age=31536000, immutable")
+                .body(Body::from(file.contents().to_vec()))
+                .unwrap()
+        );
+    }
+
+    // 对于非 API、非实际文件系统路径的请求，返回 SPA 的 index.html
+    // 但如果路径看起来像是实际笔记文件（有扩展名或存在于文件系统），则不拦截
+    if relative.is_empty() || relative == "index.html" {
+        let index = WEB_DIST.get_file("index.html")?;
+        return Some(
+            Response::builder()
+                .status(StatusCode::OK)
+                .header("content-type", "text/html; charset=utf-8")
+                .body(Body::from(index.contents().to_vec()))
+                .unwrap()
+        );
+    }
+
+    None
 }
 
 /// 处理 /notes 下的文件请求
