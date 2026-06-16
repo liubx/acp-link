@@ -456,13 +456,13 @@ struct AskFile {
     data: String,
 }
 
-/// POST /api/upload — 上传文件到 .tmp/upload/，返回服务端路径
+/// POST /api/upload — 上传文件到 .tmp/uploads/，返回服务端路径
 async fn handle_upload(
     State(state): State<Arc<ApiState>>,
     headers: axum::http::HeaderMap,
     body: axum::body::Bytes,
 ) -> Response {
-    let upload_dir = state.cwd.join(".tmp/upload");
+    let upload_dir = state.cwd.join(".tmp/uploads");
     let _ = std::fs::create_dir_all(&upload_dir);
 
     // 从 header 取文件名
@@ -569,7 +569,7 @@ async fn handle_ask(
 
     if !parsed.blocks.is_empty() {
         // 有序 blocks 模式（图文混排）
-        let upload_dir = state.cwd.join(".tmp/upload");
+        let upload_dir = state.cwd.join(".tmp/uploads");
         let _ = std::fs::create_dir_all(&upload_dir);
 
         for block in &parsed.blocks {
@@ -628,7 +628,7 @@ async fn handle_ask(
         }
 
         if !parsed.files.is_empty() {
-            let upload_dir = state.cwd.join(".tmp/upload");
+            let upload_dir = state.cwd.join(".tmp/uploads");
             let _ = std::fs::create_dir_all(&upload_dir);
             for file in &parsed.files {
                 let (_, raw) = parse_data_uri(&file.data);
