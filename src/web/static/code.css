@@ -1,26 +1,38 @@
 /* === Code File Viewer === */
 .page-code {
-  max-width: 960px;
+  max-width: 920px;
   margin: 0 auto;
-  padding: 80px 24px 100px;
+  padding: 72px 20px 100px;
   min-height: 100dvh;
 }
 
 .code-wrap {
-  background: #2b303b;
+  background: #1e2127;
   border: 1px solid var(--border);
   border-top: none;
-  border-radius: 0 0 14px 14px;
+  border-radius: 0 0 var(--radius) var(--radius);
   overflow: hidden;
   box-shadow: var(--shadow);
+  position: relative;
 }
+/* 顶部渐变装饰线 */
+.code-wrap::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, var(--accent-glow), transparent);
+}
+
 .code-wrap pre {
   margin: 0;
   padding: 0;
   overflow-x: auto;
-  font-family: 'SF Mono', 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
-  font-size: .82em;
-  line-height: 1.7;
+  font-family: var(--font-mono);
+  font-size: .8em;
+  line-height: 1.75;
   tab-size: 4;
 }
 
@@ -35,32 +47,39 @@
 }
 .code-table .ln {
   width: 1%;
-  min-width: 44px;
-  padding: 0 12px 0 16px;
+  min-width: 48px;
+  padding: 0 14px 0 18px;
   text-align: right;
-  color: #65737e;
+  color: #4a5568;
   user-select: none;
   -webkit-user-select: none;
   font-size: .85em;
-  border-right: 1px solid rgba(255, 255, 255, .06);
+  border-right: 1px solid rgba(255, 255, 255, .04);
+  transition: color .1s ease;
+}
+.code-table tr:hover .ln {
+  color: #8b949e;
 }
 .code-table .code {
-  padding: 0 16px;
+  padding: 0 18px;
 }
 .code-table tr:first-child .ln,
-.code-table tr:first-child .code { padding-top: 16px; }
+.code-table tr:first-child .code { padding-top: 18px; }
 .code-table tr:last-child .ln,
-.code-table tr:last-child .code { padding-bottom: 16px; }
+.code-table tr:last-child .code { padding-bottom: 18px; }
+
+/* hover 行高亮 */
+.code-table tr:hover {
+  background: rgba(99, 102, 241, .04);
+}
 
 /* === Responsive === */
 @media (max-width: 600px) {
-  .page-code { padding: 48px 16px 80px; }
-  .code-wrap pre { font-size: .78em; }
-  .nav-inner { padding: 12px 16px; }
-  .nav-meta { padding: 12px 16px; }
-  .code-table .ln { min-width: 32px; padding: 0 8px 0 10px; }
-  .code-table .code { padding: 0 10px; }
+  .page-code { padding: 48px 14px 80px; }
+  .code-wrap pre { font-size: .76em; }
+  .code-table .ln { min-width: 36px; padding: 0 8px 0 12px; font-size: .8em; }
+  .code-table .code { padding: 0 12px; }
 }
 @media (min-width: 1024px) {
-  .page-code { max-width: 1040px; padding: 100px 40px 120px; }
+  .page-code { max-width: 1000px; padding: 96px 40px 120px; }
 }
