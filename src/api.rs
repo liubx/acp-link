@@ -442,10 +442,27 @@ fn render_code_file(content: &str, ext: &str, relative: &str) -> String {
         .or_else(|| ss.find_syntax_by_extension(&ext.to_lowercase()))
         .unwrap_or_else(|| ss.find_syntax_plain_text());
 
-    // 使用 base16-ocean.dark 主题（与暗色 UI 搭配），浅色模式下通过 CSS 反色
+    // 使用 base16-ocean.dark 主题
     let theme = &ts.themes["base16-ocean.dark"];
     let highlighted = highlighted_html_for_string(content, &ss, syntax, theme)
         .unwrap_or_else(|_| format!("<pre><code>{}</code></pre>", content));
+
+    // 包裹行号
+    let lines: Vec<&str> = highlighted
+        .trim_start_matches("<pre style=\"background-color:#2b303b;\">")
+        .trim_end_matches("</pre>")
+        .trim_start_matches('\n')
+        .split('\n')
+        .collect();
+
+    let mut code_html = String::from("<table class=\"code-table\"><tbody>");
+    for (i, line) in lines.iter().enumerate() {
+        let num = i + 1;
+        code_html.push_str(&format!(
+            "<tr><td class=\"ln\">{num}</td><td class=\"code\">{line}</td></tr>"
+        ));
+    }
+    code_html.push_str("</tbody></table>");
 
     // 面包屑
     let parts: Vec<&str> = relative.split('/').filter(|s| !s.is_empty()).collect();
@@ -479,8 +496,14 @@ body{{max-width:960px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-s
 .nav{{background:var(--card-bg);border:1px solid var(--border);border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;overflow:hidden;border-bottom:1px solid var(--border);}}
 .nav-inner{{display:flex;align-items:center;gap:8px;font-size:.82em;padding:14px 24px;font-weight:500;color:var(--muted);letter-spacing:.01em;}}
 .nav-meta{{font-size:.75em;color:var(--muted);padding:14px 24px;opacity:.7;}}
-.code-wrap{{background:var(--code-bg);border:1px solid var(--border);border-top:none;border-radius:0 0 14px 14px;overflow:hidden;box-shadow:var(--shadow);}}
-.code-wrap pre{{margin:0;padding:20px 24px;overflow-x:auto;font-family:'SF Mono','JetBrains Mono','Fira Code','Cascadia Code',monospace;font-size:.82em;line-height:1.7;tab-size:4;}}
+.code-wrap{{background:#2b303b;border:1px solid var(--border);border-top:none;border-radius:0 0 14px 14px;overflow:hidden;box-shadow:var(--shadow);}}
+.code-wrap pre{{margin:0;padding:0;overflow-x:auto;font-family:'SF Mono','JetBrains Mono','Fira Code','Cascadia Code',monospace;font-size:.82em;line-height:1.7;tab-size:4;}}
+.code-table{{border-collapse:collapse;width:100%;}}
+.code-table td{{padding:0;vertical-align:top;white-space:pre;}}
+.code-table .ln{{width:1%;min-width:44px;padding:0 12px 0 16px;text-align:right;color:#65737e;user-select:none;-webkit-user-select:none;font-size:.85em;border-right:1px solid rgba(255,255,255,.06);}}
+.code-table .code{{padding:0 16px;}}
+.code-table tr:first-child .ln,.code-table tr:first-child .code{{padding-top:16px;}}
+.code-table tr:last-child .ln,.code-table tr:last-child .code{{padding-bottom:16px;}}
 .nav a{{color:var(--muted);text-decoration:none;transition:color .2s cubic-bezier(.4,0,.2,1);}}
 .nav a:hover{{color:var(--accent-light)}}
 .nav a.home{{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--hover-bg);color:var(--muted);transition:all .2s cubic-bezier(.4,0,.2,1);}}
@@ -492,7 +515,7 @@ body{{max-width:960px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-s
 </style></head><body>
 <button class="theme-toggle" onclick="toggleTheme()"></button>
 <div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div><div class="nav-meta">{line_count} 行 · {size_str} · {ext}</div></div>
-<div class="code-wrap">{highlighted}</div>
+<div class="code-wrap"><pre>{code_html}</pre></div>
 {CHAT_WIDGET}</body></html>"#)
 }
 
