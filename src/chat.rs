@@ -44,7 +44,7 @@ pub const CHAT_WIDGET: &str = r##"
 @keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .msg-user{align-self:flex-end;background:var(--accent,#4f46e5);color:#fff;border-bottom-right-radius:4px;}
 .msg-user img{max-width:200px;border-radius:8px;margin:4px 0;display:block;}
-.msg-bot{align-self:flex-start;background:var(--hover-bg,rgba(99,102,241,.08));border-bottom-left-radius:4px;color:var(--fg);}
+.msg-bot{align-self:flex-start;background:var(--hover-bg,rgba(99,102,241,.08));border-bottom-left-radius:4px;color:var(--fg);border-left:3px solid var(--accent,#6366f1);}
 .msg-bot code{background:var(--code-bg,#141414);padding:1px 5px;border-radius:4px;font-size:.84em;font-family:'SF Mono','JetBrains Mono',monospace;}
 .msg-bot pre{background:var(--code-bg,#141414);padding:12px 14px;border-radius:8px;overflow-x:auto;margin:8px 0;border:1px solid var(--border);}
 .msg-typing{color:var(--muted)}

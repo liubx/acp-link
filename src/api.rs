@@ -134,6 +134,17 @@ async fn serve_notes_file(root: &PathBuf, path: &str) -> Response {
         return Html(html).into_response();
     }
 
+    // 代码/文本文件 → 语法高亮渲染
+    let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("");
+    if is_code_file(ext) {
+        let content = match std::fs::read_to_string(&file_path) {
+            Ok(c) => c,
+            Err(_) => return (StatusCode::INTERNAL_SERVER_ERROR, "Read error").into_response(),
+        };
+        let html = render_code_file(&content, ext, relative);
+        return Html(html).into_response();
+    }
+
     // 其他文件 → 直接返回
     let data = match std::fs::read(&file_path) {
         Ok(d) => d,
@@ -204,6 +215,15 @@ fn render_directory(dir_path: &PathBuf, relative: &str) -> Html<String> {
             "dir"
         } else if name.ends_with(".md") {
             "md"
+        } else if name.ends_with(".json") || name.ends_with(".yaml") || name.ends_with(".yml") || name.ends_with(".toml") {
+            "config"
+        } else if name.ends_with(".rs") || name.ends_with(".py") || name.ends_with(".js") || name.ends_with(".ts")
+            || name.ends_with(".go") || name.ends_with(".java") || name.ends_with(".c") || name.ends_with(".cpp")
+            || name.ends_with(".sh") || name.ends_with(".rb") || name.ends_with(".swift") || name.ends_with(".kt") {
+            "code"
+        } else if name.ends_with(".png") || name.ends_with(".jpg") || name.ends_with(".jpeg")
+            || name.ends_with(".gif") || name.ends_with(".svg") || name.ends_with(".webp") {
+            "image"
         } else {
             "file"
         };
@@ -227,15 +247,26 @@ h2 a.home svg{{display:block}}
 h2 .sep{{color:var(--muted);opacity:.4;font-weight:300;font-size:.9em;margin:0 2px;}}
 h2 .current{{color:var(--fg);font-weight:600}}
 .list{{border-radius:14px;overflow:hidden;background:var(--card-bg);border:1px solid var(--border);box-shadow:var(--shadow);}}
-.entry{{display:block;padding:13px 24px;border-bottom:1px solid var(--border);position:relative;overflow:hidden;transition:all .2s cubic-bezier(.4,0,.2,1);}}
+.entry{{display:block;padding:13px 24px 13px 28px;border-bottom:1px solid var(--border);position:relative;overflow:hidden;transition:all .2s cubic-bezier(.4,0,.2,1);}}
 .entry:last-child{{border-bottom:none}}
-.entry:hover{{background:var(--hover-bg);transform:translateX(2px)}}
-.entry:active{{transform:translateX(2px) scale(.995)}}
+.entry::before{{content:'';position:absolute;left:12px;top:50%;transform:translateY(-50%);width:3px;height:20px;border-radius:2px;background:var(--border);transition:all .2s cubic-bezier(.4,0,.2,1);}}
+.dir::before{{background:#f59e0b;}}
+.md::before{{background:var(--accent);}}
+.file::before{{background:var(--muted);opacity:.4;}}
+.entry:hover{{background:var(--hover-bg)}}
+.entry:hover::before{{height:28px;}}
+.entry:active{{transform:scale(.995)}}
 .entry a{{text-decoration:none;color:var(--fg);font-size:.88em;font-weight:400;display:flex;align-items:center;gap:12px;transition:color .15s;}}
 .entry:hover a{{color:var(--accent-light)}}
 .dir a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f59e0b'%3E%3Cpath d='M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
 .md a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM8 13h8v1.5H8V13zm0 3.5h5V18H8v-1.5z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
 .file a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.7;}}
+.config a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM8 13h8v1.5H8V13zm0 3h6v1.5H8V16z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
+.code a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f472b6'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM9.4 12.6l-2.4 2.4 2.4 2.4-.8.8L5.4 15l3.2-3.2.8.8zm5.2 0l2.4 2.4-2.4 2.4.8.8 3.2-3.2-3.2-3.2-.8.8z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
+.image a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238b5cf6'%3E%3Cpath d='M4 4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h16v8.6l-3.3-3.3a1 1 0 00-1.4 0L10 16.6l-2.3-2.3a1 1 0 00-1.4 0L4 16.6V6zm4 2a2 2 0 100 4 2 2 0 000-4z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
+.config::before{{background:#10b981 !important;}}
+.code::before{{background:#f472b6 !important;}}
+.image::before{{background:#8b5cf6 !important;}}
 .dir a{{font-weight:500}}
 .dir a::after{{content:'';display:inline-block;width:14px;height:14px;margin-left:auto;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236b7280'%3E%3Cpath fill-rule='evenodd' d='M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:0;transform:translateX(-6px);transition:all .2s cubic-bezier(.4,0,.2,1);}}
 .entry:hover .dir a::after,.dir:hover a::after{{opacity:.7;transform:translateX(0)}}
@@ -356,7 +387,8 @@ body{{max-width:860px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-s
 .content h3{{font-size:1.1em;font-weight:600;border-bottom:none;}}
 .content h1:first-child,.content h2:first-child{{margin-top:0;}}
 .content code{{background:var(--code-bg);padding:2px 7px;border-radius:5px;font-size:0.85em;font-family:'SF Mono','JetBrains Mono','Fira Code',monospace;}}
-.content pre{{background:var(--code-bg);padding:18px 20px;border-radius:10px;overflow-x:auto;margin:1.2em 0;border:1px solid var(--border);}}
+.content pre{{background:var(--code-bg);padding:18px 20px;border-radius:10px;overflow-x:auto;margin:1.2em 0;border:1px solid var(--border);position:relative;}}
+.content pre::before{{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 2px 2px 0;background:var(--accent);opacity:.5;}}
 .content pre code{{background:none;padding:0;font-size:.84em;line-height:1.6;}}
 .content table{{border-collapse:collapse;width:100%;margin:1.2em 0;border-radius:8px;overflow:hidden;border:1px solid var(--border);}}
 .content th,.content td{{border:1px solid var(--border);padding:10px 14px;text-align:left;font-size:.9em;}}
@@ -376,6 +408,91 @@ body{{max-width:860px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-s
 <button class="theme-toggle" onclick="toggleTheme()"></button>
 <div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div></div>
 <div class="content">{html_output}</div>
+{CHAT_WIDGET}</body></html>"#)
+}
+
+/// 判断文件扩展名是否为可渲染的代码/文本文件
+fn is_code_file(ext: &str) -> bool {
+    matches!(
+        ext.to_lowercase().as_str(),
+        "json" | "yaml" | "yml" | "toml" | "xml"
+            | "rs" | "py" | "js" | "ts" | "jsx" | "tsx"
+            | "go" | "java" | "c" | "cpp" | "h" | "hpp"
+            | "sh" | "bash" | "zsh" | "fish"
+            | "rb" | "swift" | "kt" | "kts"
+            | "css" | "scss" | "less" | "html" | "htm"
+            | "sql" | "graphql" | "gql"
+            | "dockerfile" | "makefile"
+            | "txt" | "log" | "env" | "ini" | "cfg" | "conf"
+            | "csv"
+    )
+}
+
+/// 将代码文件渲染为带语法高亮的 HTML 页面
+fn render_code_file(content: &str, ext: &str, relative: &str) -> String {
+    use syntect::highlighting::ThemeSet;
+    use syntect::html::highlighted_html_for_string;
+    use syntect::parsing::SyntaxSet;
+
+    let ss = SyntaxSet::load_defaults_newlines();
+    let ts = ThemeSet::load_defaults();
+
+    // 根据扩展名查找语法定义
+    let syntax = ss.find_syntax_by_extension(ext)
+        .or_else(|| ss.find_syntax_by_extension(&ext.to_lowercase()))
+        .unwrap_or_else(|| ss.find_syntax_plain_text());
+
+    // 使用 base16-ocean.dark 主题（与暗色 UI 搭配），浅色模式下通过 CSS 反色
+    let theme = &ts.themes["base16-ocean.dark"];
+    let highlighted = highlighted_html_for_string(content, &ss, syntax, theme)
+        .unwrap_or_else(|_| format!("<pre><code>{}</code></pre>", content));
+
+    // 面包屑
+    let parts: Vec<&str> = relative.split('/').filter(|s| !s.is_empty()).collect();
+    let mut breadcrumb = String::new();
+    let mut acc = String::new();
+    for (i, part) in parts.iter().enumerate() {
+        acc = if acc.is_empty() { part.to_string() } else { format!("{acc}/{part}") };
+        breadcrumb.push_str(r#"<span class="sep">/</span>"#);
+        if i == parts.len() - 1 {
+            breadcrumb.push_str(&format!(r#"<span class="current">{part}</span>"#));
+        } else {
+            breadcrumb.push_str(&format!(r#"<a href="/{}">{part}</a>"#, urlencoding::encode(&acc)));
+        }
+    }
+
+    let line_count = content.lines().count();
+    let file_size = content.len();
+    let size_str = if file_size < 1024 {
+        format!("{file_size} B")
+    } else if file_size < 1024 * 1024 {
+        format!("{:.1} KB", file_size as f64 / 1024.0)
+    } else {
+        format!("{:.1} MB", file_size as f64 / (1024.0 * 1024.0))
+    };
+
+    format!(r#"<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{relative}</title>
+{THEME_HEAD}
+<style>
+*{{margin:0;padding:0;box-sizing:border-box}}
+body{{max-width:960px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-system,BlinkMacSystemFont,'Noto Sans SC','Inter',system-ui,sans-serif;min-height:100dvh;-webkit-font-smoothing:antialiased;}}
+.nav{{background:var(--card-bg);border:1px solid var(--border);border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;overflow:hidden;border-bottom:1px solid var(--border);}}
+.nav-inner{{display:flex;align-items:center;gap:8px;font-size:.82em;padding:14px 24px;font-weight:500;color:var(--muted);letter-spacing:.01em;}}
+.nav-meta{{font-size:.75em;color:var(--muted);padding:14px 24px;opacity:.7;}}
+.code-wrap{{background:var(--code-bg);border:1px solid var(--border);border-top:none;border-radius:0 0 14px 14px;overflow:hidden;box-shadow:var(--shadow);}}
+.code-wrap pre{{margin:0;padding:20px 24px;overflow-x:auto;font-family:'SF Mono','JetBrains Mono','Fira Code','Cascadia Code',monospace;font-size:.82em;line-height:1.7;tab-size:4;}}
+.nav a{{color:var(--muted);text-decoration:none;transition:color .2s cubic-bezier(.4,0,.2,1);}}
+.nav a:hover{{color:var(--accent-light)}}
+.nav a.home{{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--hover-bg);color:var(--muted);transition:all .2s cubic-bezier(.4,0,.2,1);}}
+.nav a.home:hover{{background:var(--accent);color:#fff;transform:scale(1.05)}}
+.nav .sep{{color:var(--muted);opacity:.4;font-weight:300;margin:0 2px;}}
+.nav .current{{color:var(--fg);font-weight:600;}}
+@media(max-width:600px){{body{{padding:48px 16px 80px}}.code-wrap pre{{padding:14px 12px;font-size:.78em;}}.nav-inner{{padding:12px 16px;}}.nav-meta{{padding:12px 16px;}}}}
+@media(min-width:1024px){{body{{max-width:1040px;padding:100px 40px 120px;}}}}
+</style></head><body>
+<button class="theme-toggle" onclick="toggleTheme()"></button>
+<div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div><div class="nav-meta">{line_count} 行 · {size_str} · {ext}</div></div>
+<div class="code-wrap">{highlighted}</div>
 {CHAT_WIDGET}</body></html>"#)
 }
 
