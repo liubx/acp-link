@@ -1,16 +1,20 @@
-import { useLocation } from 'wouter'
-import { useState, useEffect } from 'react'
-import { Directory } from './pages/Directory'
-import { Document } from './pages/Document'
-import { CodeView } from './pages/CodeView'
-import { Chat } from './components/Chat'
-import { ThemeToggle } from './components/ThemeToggle'
-import { Pathbar } from './components/Pathbar'
+import { useState, useEffect, useCallback } from 'react'
+import { Sidebar } from './components/Sidebar'
+import { Toolbar } from './components/Toolbar'
+import { ContentView } from './components/ContentView'
+import { ChatPanel } from './components/ChatPanel'
+import './index.css'
 
-interface FileInfo {
+export interface FileEntry {
+  name: string
+  is_dir: boolean
+  ext: string
+}
+
+export interface FileInfo {
   type: 'directory' | 'markdown' | 'code' | 'binary'
   path: string
-  entries?: Array<{ name: string; is_dir: boolean; ext: string }>
+  entries?: FileEntry[]
   content?: string
   ext?: string
   line_count?: number
@@ -18,87 +22,98 @@ interface FileInfo {
 }
 
 export function App() {
-  const [location] = useLocation()
-  const [info, setInfo] = useState<FileInfo | null>(null)
+  const [currentPath, setCurrentPath] = useState('/')
+  const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [error, setError] = useState(false)
+  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const [chatOpen, setChatOpen] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    const stored = localStorage.getItem('theme')
+    if (stored === 'light') return 'light'
+    return 'dark'
+  })
 
+  // 主题切换
   useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light')
+    } else {
+      document.documentElement.removeAttribute('data-theme')
+    }
+    localStorage.setItem('theme', theme)
+  }, [theme])
+
+  // 加载文件/目录数据
+  const loadPath = useCallback((path: string) => {
+    setCurrentPath(path)
     setLoading(true)
-    setError(false)
+    const cleanPath = path === '/' ? '' : path.replace(/\/+$/, '')
+    fetch(`/api/files${cleanPath}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(data => { setFileInfo(data); setLoading(false) })
+      .catch(() => { setFileInfo(null); setLoading(false) })
 
-    const cleanPath = location === '/' ? '' : location.replace(/\/+$/, '')
-    const apiUrl = `/api/files${cleanPath}`
+    // 更新浏览器 URL（不刷新）
+    window.history.pushState(null, '', path)
+  }, [])
 
-    fetch(apiUrl)
-      .then(r => {
-        if (!r.ok) throw new Error(`HTTP ${r.status}`)
-        return r.json()
-      })
-      .then(data => {
-        setInfo(data)
-        setLoading(false)
-      })
-      .catch(() => {
-        setError(true)
-        setLoading(false)
-      })
-  }, [location])
+  // 初始加载
+  useEffect(() => {
+    const path = window.location.pathname || '/'
+    setCurrentPath(path)
+    loadPath(path)
+  }, [loadPath])
+
+  // 浏览器前进/后退
+  useEffect(() => {
+    const handler = () => {
+      const path = window.location.pathname || '/'
+      setCurrentPath(path)
+      loadPath(path)
+    }
+    window.addEventListener('popstate', handler)
+    return () => window.removeEventListener('popstate', handler)
+  }, [loadPath])
 
   return (
-    <>
-      <ThemeToggle />
-      <div className="min-h-dvh">
-        {/* 路径栏 */}
-        <div className="max-w-[900px] mx-auto px-4 sm:px-5 pt-12 sm:pt-14">
-          <Pathbar path={location} />
-        </div>
+    <div className="h-dvh flex flex-col overflow-hidden bg-[var(--color-bg)]">
+      {/* 顶部工具栏 */}
+      <Toolbar
+        currentPath={currentPath}
+        sidebarOpen={sidebarOpen}
+        onToggleSidebar={() => setSidebarOpen(s => !s)}
+        onToggleChat={() => setChatOpen(c => !c)}
+        chatOpen={chatOpen}
+        theme={theme}
+        onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+        onNavigate={loadPath}
+      />
 
-        {/* 加载骨架屏 */}
-        {loading && (
-          <div className="max-w-[600px] mx-auto px-4 pt-4">
-            <div className="animate-pulse space-y-2">
-              {[1, 2, 3, 4, 5].map(i => (
-                <div key={i} className="flex items-center gap-3 px-4 py-3 min-h-[44px]">
-                  <div className="w-5 h-5 rounded bg-[var(--color-surface)]" />
-                  <div className="h-4 rounded bg-[var(--color-surface)] flex-1 max-w-[200px]" />
-                </div>
-              ))}
-            </div>
-          </div>
+      {/* 主体区域 */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* 侧边栏文件树 */}
+        {sidebarOpen && (
+          <Sidebar
+            currentPath={currentPath}
+            onNavigate={loadPath}
+          />
         )}
 
-        {/* 错误状态 */}
-        {!loading && error && (
-          <div className="max-w-[600px] mx-auto px-4 pt-16 text-center text-sm text-[var(--color-muted)]">
-            加载失败，请检查服务是否运行
-          </div>
-        )}
+        {/* 主内容区 */}
+        <main className="flex-1 overflow-auto">
+          <ContentView
+            fileInfo={fileInfo}
+            loading={loading}
+            onNavigate={loadPath}
+            currentPath={currentPath}
+          />
+        </main>
 
-        {/* 内容渲染 */}
-        {!loading && !error && info && (
-          <>
-            {info.type === 'directory' && (
-              <Directory entries={info.entries || []} basePath={location} />
-            )}
-            {info.type === 'markdown' && <Document content={info.content || ''} />}
-            {info.type === 'code' && (
-              <CodeView
-                content={info.content || ''}
-                ext={info.ext || ''}
-                lineCount={info.line_count || 0}
-                size={info.size || ''}
-              />
-            )}
-            {info.type === 'binary' && (
-              <div className="max-w-[600px] mx-auto px-4 pt-16 text-center text-sm text-[var(--color-muted)]">
-                该文件类型不支持预览
-              </div>
-            )}
-          </>
+        {/* 聊天侧边栏 */}
+        {chatOpen && (
+          <ChatPanel onClose={() => setChatOpen(false)} />
         )}
       </div>
-      <Chat />
-    </>
+    </div>
   )
 }
