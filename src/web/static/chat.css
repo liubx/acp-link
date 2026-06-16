@@ -190,7 +190,6 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  scroll-behavior: smooth;
   overscroll-behavior: contain;
 }
 

@@ -40,9 +40,16 @@ window.copyCode=function(id){
   function loadHistory(){
     messages=document.getElementById('chat-messages');
     var hist=JSON.parse(localStorage.getItem(historyKey)||'[]');
+    // 加载历史时禁用平滑滚动，直接跳到底部
+    messages.style.scrollBehavior='auto';
     messages.innerHTML='';
     hist.forEach(function(m){addMsgEl(m.role,'',m.html);});
-    messages.scrollTop=messages.scrollHeight;
+    // 用 requestAnimationFrame 确保 DOM 渲染完后再滚动
+    requestAnimationFrame(function(){
+      messages.scrollTop=messages.scrollHeight;
+      // 恢复平滑滚动（用于后续新消息）
+      setTimeout(function(){messages.style.scrollBehavior='smooth';},50);
+    });
   }
 
   function saveHistory(){
