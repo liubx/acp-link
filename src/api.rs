@@ -9,10 +9,10 @@ use std::sync::Arc;
 
 use axum::Router;
 use axum::body::Body;
-use axum::extract::{Request, State};
+use axum::extract::{Request, State, Path};
 use axum::http::StatusCode;
-use axum::response::{Html, IntoResponse, Response};
-use axum::routing::post;
+use axum::response::{Html, IntoResponse, Response, Json};
+use axum::routing::{post, get};
 use tokio::sync::{RwLock, broadcast};
 
 use crate::link::{AcpBridge, StreamEvent};
@@ -69,6 +69,8 @@ pub fn api_routes(bridge: AcpBridge, cwd: PathBuf) -> Router {
     Router::new()
         .route("/api/ask", post(handle_ask))
         .route("/api/upload", post(handle_upload))
+        .route("/api/files/{*path}", get(handle_files_api))
+        .route("/api/files", get(handle_files_api_root))
         .with_state(state)
         .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024))
         .fallback_service(NotesService { root: cwd })
@@ -454,6 +456,117 @@ enum AskBlock {
 struct AskFile {
     name: String,
     data: String,
+}
+
+/// GET /api/files — 根目录文件列表 JSON
+async fn handle_files_api_root(
+    State(state): State<Arc<ApiState>>,
+) -> Response {
+    handle_files_json(&state.cwd, "").await
+}
+
+/// GET /api/files/*path — 文件/目录信息 JSON
+async fn handle_files_api(
+    State(state): State<Arc<ApiState>>,
+    Path(path): Path<String>,
+) -> Response {
+    handle_files_json(&state.cwd, &path).await
+}
+
+async fn handle_files_json(root: &PathBuf, relative: &str) -> Response {
+    let decoded = urlencoding::decode(relative.trim_start_matches('/')).unwrap_or_default();
+    let rel = decoded.as_ref();
+
+    let file_path = if rel.is_empty() { root.clone() } else { root.join(rel) };
+
+    if !file_path.exists() {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "not found"}))).into_response();
+    }
+
+    // 安全检查
+    let abs_root = std::fs::canonicalize(root).unwrap_or(root.clone());
+    let abs_file = std::fs::canonicalize(&file_path).unwrap_or(file_path.clone());
+    if !abs_file.starts_with(&abs_root) {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "forbidden"}))).into_response();
+    }
+
+    // 目录
+    if file_path.is_dir() {
+        let mut entries = Vec::new();
+        if let Ok(read_dir) = std::fs::read_dir(&file_path) {
+            for entry in read_dir.flatten() {
+                let name = entry.file_name().to_string_lossy().to_string();
+                if name.starts_with('.') { continue; }
+                let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
+                let ext = if is_dir {
+                    String::new()
+                } else {
+                    std::path::Path::new(&name)
+                        .extension()
+                        .and_then(|e| e.to_str())
+                        .unwrap_or("")
+                        .to_string()
+                };
+                entries.push(serde_json::json!({"name": name, "is_dir": is_dir, "ext": ext}));
+            }
+        }
+        // 排序：目录在前
+        entries.sort_by(|a, b| {
+            let a_dir = a["is_dir"].as_bool().unwrap_or(false);
+            let b_dir = b["is_dir"].as_bool().unwrap_or(false);
+            match (a_dir, b_dir) {
+                (true, false) => std::cmp::Ordering::Less,
+                (false, true) => std::cmp::Ordering::Greater,
+                _ => a["name"].as_str().unwrap_or("").cmp(b["name"].as_str().unwrap_or("")),
+            }
+        });
+
+        return Json(serde_json::json!({
+            "type": "directory",
+            "path": rel,
+            "entries": entries
+        })).into_response();
+    }
+
+    let ext = file_path.extension().and_then(|e| e.to_str()).unwrap_or("").to_string();
+
+    // Markdown
+    if ext == "md" {
+        let content = std::fs::read_to_string(&file_path).unwrap_or_default();
+        return Json(serde_json::json!({
+            "type": "markdown",
+            "path": rel,
+            "content": content
+        })).into_response();
+    }
+
+    // 代码/文本文件
+    if is_code_file(&ext) {
+        let content = std::fs::read_to_string(&file_path).unwrap_or_default();
+        let line_count = content.lines().count();
+        let file_size = content.len();
+        let size_str = if file_size < 1024 {
+            format!("{file_size} B")
+        } else if file_size < 1024 * 1024 {
+            format!("{:.1} KB", file_size as f64 / 1024.0)
+        } else {
+            format!("{:.1} MB", file_size as f64 / (1024.0 * 1024.0))
+        };
+        return Json(serde_json::json!({
+            "type": "code",
+            "path": rel,
+            "content": content,
+            "ext": ext,
+            "line_count": line_count,
+            "size": size_str
+        })).into_response();
+    }
+
+    // 二进制/其他
+    Json(serde_json::json!({
+        "type": "binary",
+        "path": rel
+    })).into_response()
 }
 
 /// POST /api/upload — 上传文件到 .tmp/uploads/，返回服务端路径

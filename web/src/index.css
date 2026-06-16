@@ -1,0 +1,42 @@
+@import "tailwindcss";
+
+/* 自定义主题变量 */
+@theme {
+  --color-bg: #09090b;
+  --color-fg: #fafafa;
+  --color-muted: #a1a1aa;
+  --color-dim: #71717a;
+  --color-border: #27272a;
+  --color-surface: #18181b;
+  --color-accent: #22d3ee;
+  --color-accent-dim: rgba(34, 211, 238, .08);
+}
+
+/* 暗色为默认 */
+html {
+  color-scheme: dark;
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-fg);
+  font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans SC', 'Inter', system-ui, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 浅色模式覆盖 */
+html[data-theme="light"] {
+  color-scheme: light;
+  --color-bg: #ffffff;
+  --color-fg: #18181b;
+  --color-muted: #71717a;
+  --color-dim: #a1a1aa;
+  --color-border: #e4e4e7;
+  --color-surface: #f4f4f5;
+  --color-accent: #0891b2;
+  --color-accent-dim: rgba(8, 145, 178, .1);
+}
+
+::selection {
+  background: var(--color-accent-dim);
+}
