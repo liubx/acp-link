@@ -41,8 +41,12 @@ function FilePage({ params }: { params: { rest?: string } }) {
 
   useEffect(() => {
     setLoading(true)
-    fetch(`/api/files${path}`)
-      .then(r => r.json())
+    const apiPath = path === '/' ? '/api/files' : `/api/files${path}`
+    fetch(apiPath)
+      .then(r => {
+        if (!r.ok) throw new Error(`HTTP ${r.status}`)
+        return r.json()
+      })
       .then(data => { setInfo(data); setLoading(false) })
       .catch(() => setLoading(false))
   }, [path])

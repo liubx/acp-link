@@ -114,7 +114,7 @@ impl tower::Service<Request> for NotesService {
 fn serve_spa_file(path: &str) -> Option<Response> {
     let relative = path.trim_start_matches('/');
 
-    // 如果请求的是静态资源文件（JS/CSS/图片等），精确匹配
+    // 静态资源文件（JS/CSS/图片等），精确匹配
     if relative.starts_with("assets/") || relative == "favicon.ico" {
         let file = WEB_DIST.get_file(relative)?;
         let mime = mime_guess::from_path(relative).first_or_octet_stream().to_string();
@@ -128,20 +128,16 @@ fn serve_spa_file(path: &str) -> Option<Response> {
         );
     }
 
-    // 对于非 API、非实际文件系统路径的请求，返回 SPA 的 index.html
-    // 但如果路径看起来像是实际笔记文件（有扩展名或存在于文件系统），则不拦截
-    if relative.is_empty() || relative == "index.html" {
-        let index = WEB_DIST.get_file("index.html")?;
-        return Some(
-            Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "text/html; charset=utf-8")
-                .body(Body::from(index.contents().to_vec()))
-                .unwrap()
-        );
-    }
-
-    None
+    // 所有其他路径都返回 SPA index.html（React Router 处理客户端路由）
+    // API 路径 (/api/*) 已经被 axum Router 优先匹配了，不会到这里
+    let index = WEB_DIST.get_file("index.html")?;
+    Some(
+        Response::builder()
+            .status(StatusCode::OK)
+            .header("content-type", "text/html; charset=utf-8")
+            .body(Body::from(index.contents().to_vec()))
+            .unwrap()
+    )
 }
 
 /// 处理 /notes 下的文件请求
