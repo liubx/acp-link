@@ -5,51 +5,69 @@
 /// 聊天浮窗的完整 HTML/CSS/JS 代码片段
 pub const CHAT_WIDGET: &str = r##"
 <div id="chat-fab" onclick="toggleChat()">
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
+  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
 </div>
 <div id="chat-panel" style="display:none">
   <div id="chat-header">
-    <span>AI 助手</span>
-    <button onclick="toggleChat()" style="background:none;border:none;color:var(--fg);font-size:20px;cursor:pointer;line-height:1">×</button>
+    <div id="chat-header-left">
+      <div id="chat-avatar"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M18 14a6 6 0 00-12 0v4h12v-4z"/></svg></div>
+      <span>AI 助手</span>
+    </div>
+    <button onclick="toggleChat()" aria-label="关闭" style="background:none;border:none;color:var(--muted);width:28px;height:28px;border-radius:6px;cursor:pointer;display:flex;align-items:center;justify-content:center;transition:all .15s;"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></button>
   </div>
   <div id="chat-messages"></div>
   <div id="chat-input-area">
     <div id="chat-input-row">
-      <label id="chat-attach" title="添加附件"><input type="file" multiple style="display:none" onchange="handleFiles(this.files);this.value=''"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></label>
-      <div id="chat-input" contenteditable="true" data-placeholder="输入消息，粘贴图片 / 拖拽或📎添加文件"></div>
-      <button id="chat-send" onclick="sendMessage()">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor"><path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z"/></svg>
+      <label id="chat-attach" title="添加附件"><input type="file" multiple style="display:none" onchange="handleFiles(this.files);this.value=''"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 01-8.49-8.49l9.19-9.19a4 4 0 015.66 5.66l-9.2 9.19a2 2 0 01-2.83-2.83l8.49-8.48"/></svg></label>
+      <div id="chat-input" contenteditable="true" data-placeholder="输入消息，粘贴图片或拖拽文件"></div>
+      <button id="chat-send" onclick="sendMessage()" aria-label="发送">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/></svg>
       </button>
     </div>
   </div>
 </div>
 <style>
-#chat-fab{position:fixed;bottom:24px;right:24px;width:56px;height:56px;border-radius:50%;background:var(--accent,#4f46e5);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 20px rgba(0,0,0,.3);z-index:9999;transition:transform .15s;}
-#chat-fab:hover{transform:scale(1.1)}
-#chat-panel{position:fixed;bottom:90px;right:24px;width:420px;max-width:calc(100vw - 48px);height:560px;max-height:calc(100vh - 120px);background:var(--card-bg,#27272a);border:1px solid var(--border,#3f3f46);border-radius:16px;box-shadow:0 20px 60px rgba(0,0,0,.4);z-index:9998;display:flex;flex-direction:column;overflow:hidden;}
-#chat-header{padding:14px 20px;border-bottom:1px solid var(--border,#3f3f46);display:flex;justify-content:space-between;align-items:center;font-weight:600;font-size:.9em;}
-#chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px;}
-.msg{max-width:85%;padding:10px 14px;border-radius:12px;font-size:.88em;line-height:1.5;word-break:break-word;}
+#chat-fab{position:fixed;bottom:24px;right:24px;width:52px;height:52px;border-radius:14px;background:var(--accent,#4f46e5);display:flex;align-items:center;justify-content:center;cursor:pointer;box-shadow:0 4px 16px rgba(79,70,229,.35),0 1px 3px rgba(0,0,0,.1);z-index:9999;transition:all .25s cubic-bezier(.4,0,.2,1);}
+#chat-fab:hover{transform:translateY(-2px);box-shadow:0 8px 24px rgba(79,70,229,.4),0 2px 6px rgba(0,0,0,.1)}
+#chat-fab:active{transform:translateY(0) scale(.94)}
+#chat-panel{position:fixed;bottom:86px;right:24px;width:400px;max-width:calc(100vw - 48px);height:540px;max-height:calc(100vh - 120px);background:var(--card-bg,#1a1a1a);border:1px solid var(--border,rgba(255,255,255,.08));border-radius:16px;box-shadow:0 24px 48px rgba(0,0,0,.12),0 4px 12px rgba(0,0,0,.06);z-index:9998;display:flex;flex-direction:column;overflow:hidden;animation:chatSlideIn .3s cubic-bezier(.4,0,.2,1);}
+@keyframes chatSlideIn{from{opacity:0;transform:translateY(12px) scale(.96)}to{opacity:1;transform:translateY(0) scale(1)}}
+#chat-header{padding:16px 20px;border-bottom:1px solid var(--border,rgba(255,255,255,.08));display:flex;justify-content:space-between;align-items:center;}
+#chat-header-left{display:flex;align-items:center;gap:10px;font-weight:600;font-size:.88em;letter-spacing:-.01em;}
+#chat-avatar{width:30px;height:30px;border-radius:8px;background:linear-gradient(135deg,var(--accent,#4f46e5),var(--accent-light,#818cf8));display:flex;align-items:center;justify-content:center;color:#fff;}
+#chat-header button:hover{background:var(--hover-bg);color:var(--fg)}
+#chat-messages{flex:1;overflow-y:auto;padding:16px 16px;display:flex;flex-direction:column;gap:10px;scroll-behavior:smooth;}
+#chat-messages::-webkit-scrollbar{width:4px;}
+#chat-messages::-webkit-scrollbar-track{background:transparent;}
+#chat-messages::-webkit-scrollbar-thumb{background:var(--border);border-radius:4px;}
+.msg{max-width:82%;padding:10px 14px;border-radius:14px;font-size:.86em;line-height:1.6;word-break:break-word;animation:msgIn .25s cubic-bezier(.4,0,.2,1);}
+@keyframes msgIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:translateY(0)}}
 .msg-user{align-self:flex-end;background:var(--accent,#4f46e5);color:#fff;border-bottom-right-radius:4px;}
-.msg-user img{max-width:200px;border-radius:6px;margin:4px 0;display:block;}
-.msg-bot{align-self:flex-start;background:var(--hover-bg,#323238);border-bottom-left-radius:4px;}
-.msg-bot code{background:var(--code-bg,#1e1e1e);padding:1px 4px;border-radius:3px;font-size:.85em;}
-.msg-bot pre{background:var(--code-bg,#1e1e1e);padding:10px;border-radius:6px;overflow-x:auto;margin:6px 0;}
-.msg-typing::after{content:'...';animation:dots 1s infinite;}
+.msg-user img{max-width:200px;border-radius:8px;margin:4px 0;display:block;}
+.msg-bot{align-self:flex-start;background:var(--hover-bg,rgba(99,102,241,.08));border-bottom-left-radius:4px;color:var(--fg);}
+.msg-bot code{background:var(--code-bg,#141414);padding:1px 5px;border-radius:4px;font-size:.84em;font-family:'SF Mono','JetBrains Mono',monospace;}
+.msg-bot pre{background:var(--code-bg,#141414);padding:12px 14px;border-radius:8px;overflow-x:auto;margin:8px 0;border:1px solid var(--border);}
+.msg-typing{color:var(--muted)}
+.msg-typing::after{content:'...';animation:dots 1.2s infinite;}
 @keyframes dots{0%{content:'.'} 33%{content:'..'} 66%{content:'...'}}
 .msg img{max-width:100%;border-radius:8px;margin:4px 0;}
-#chat-input-area{border-top:1px solid var(--border,#3f3f46);padding:12px 16px;}
+#chat-input-area{border-top:1px solid var(--border,rgba(255,255,255,.08));padding:12px 14px;background:var(--bg,#0f0f0f);}
 #chat-input-row{display:flex;gap:8px;align-items:flex-end;}
-#chat-input{flex:1;min-height:36px;max-height:150px;overflow-y:auto;border:1px solid var(--border,#3f3f46);border-radius:10px;padding:8px 12px;background:var(--bg,#18181b);color:var(--fg,#f4f4f5);font-size:.88em;line-height:1.5;outline:none;transition:border-color .15s;word-break:break-word;}
-#chat-input:focus{border-color:var(--accent,#4f46e5)}
-#chat-input:empty::before{content:attr(data-placeholder);color:var(--muted,#71717a);pointer-events:none;}
-#chat-input img{max-width:120px;max-height:80px;border-radius:6px;margin:2px;vertical-align:middle;cursor:default;}
-#chat-input .file-tag{display:inline-block;background:var(--hover-bg,#323238);border-radius:4px;padding:2px 6px;font-size:.8em;color:var(--muted);margin:2px;vertical-align:middle;}
-#chat-send{width:36px;height:36px;border-radius:50%;border:none;background:var(--accent,#4f46e5);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:opacity .15s;}
-#chat-send:disabled{opacity:.4;cursor:not-allowed}
-#chat-attach{width:36px;height:36px;border-radius:50%;border:1px solid var(--border,#3f3f46);background:var(--bg,#18181b);color:var(--muted,#a1a1aa);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .15s;}
-#chat-attach:hover{border-color:var(--accent);color:var(--accent)}
-@media(max-width:500px){#chat-panel{bottom:0;right:0;width:100vw;height:100vh;max-height:100vh;border-radius:0;}}
+#chat-input{flex:1;min-height:38px;max-height:150px;overflow-y:auto;border:1px solid var(--border,rgba(255,255,255,.08));border-radius:12px;padding:9px 14px;background:var(--card-bg,#1a1a1a);color:var(--fg,#e4e4e7);font-size:.86em;line-height:1.55;outline:none;transition:all .2s cubic-bezier(.4,0,.2,1);word-break:break-word;}
+#chat-input:focus{border-color:var(--accent,#4f46e5);box-shadow:0 0 0 3px rgba(99,102,241,.12);}
+#chat-input:empty::before{content:attr(data-placeholder);color:var(--muted,#8b8b8b);pointer-events:none;}
+#chat-input img{max-width:120px;max-height:80px;border-radius:8px;margin:2px;vertical-align:middle;cursor:default;}
+#chat-input .file-tag{display:inline-block;background:var(--hover-bg,rgba(99,102,241,.08));border:1px solid var(--border);border-radius:6px;padding:2px 8px;font-size:.78em;color:var(--muted);margin:2px;vertical-align:middle;}
+#chat-send{width:36px;height:36px;border-radius:10px;border:none;background:var(--accent,#4f46e5);color:#fff;cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s cubic-bezier(.4,0,.2,1);}
+#chat-send:hover{transform:scale(1.05);box-shadow:0 2px 8px rgba(79,70,229,.3)}
+#chat-send:active{transform:scale(.94)}
+#chat-send:disabled{opacity:.35;cursor:not-allowed;transform:none;box-shadow:none}
+#chat-attach{width:36px;height:36px;border-radius:10px;border:1px solid var(--border,rgba(255,255,255,.08));background:var(--card-bg,#1a1a1a);color:var(--muted,#8b8b8b);cursor:pointer;display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:all .2s cubic-bezier(.4,0,.2,1);}
+#chat-attach:hover{border-color:var(--accent);color:var(--accent);transform:scale(1.05)}
+#chat-attach:active{transform:scale(.94)}
+@media(max-width:500px){#chat-fab{bottom:20px;right:20px;width:48px;height:48px;border-radius:12px;}#chat-panel{bottom:0;right:0;width:100vw;height:100dvh;max-height:100dvh;border-radius:0;animation:none;border:none;}#chat-header{padding:14px 16px;padding-top:max(14px,env(safe-area-inset-top));}#chat-input-area{padding:10px 12px;padding-bottom:max(10px,env(safe-area-inset-bottom));}#chat-input{font-size:.9em;min-height:40px;padding:10px 14px;}#chat-send,#chat-attach{width:40px;height:40px;}.msg{max-width:88%;font-size:.88em;}}
+@media(min-width:501px) and (max-width:768px){#chat-panel{width:360px;height:480px;bottom:80px;right:16px;}}
+@media(min-width:1200px){#chat-panel{width:420px;height:580px;}}
 </style>
 <script>
 window.copyCode=function(id){
@@ -415,12 +433,13 @@ window.copyCode=function(id){
     }
   });
 
-  // 粘贴：图片直接上传后插入编辑区
+  // 粘贴：图片直接上传后插入编辑区；非图片内容强制纯文本
   document.addEventListener('paste',function(e){
     var el=document.getElementById('chat-input');
     if(document.activeElement!==el)return;
     var items=e.clipboardData&&e.clipboardData.items;
     if(!items)return;
+    // 优先检查是否有图片
     for(var i=0;i<items.length;i++){
       if(items[i].type.indexOf('image')!==-1){
         e.preventDefault();
@@ -428,6 +447,13 @@ window.copyCode=function(id){
         uploadAndInsert(file,el,true);
         return;
       }
+    }
+    // 非图片粘贴：强制纯文本，去除富文本格式
+    var text=e.clipboardData.getData('text/plain');
+    if(text){
+      e.preventDefault();
+      // 用 insertText 命令插入纯文本，保留 undo 栈
+      document.execCommand('insertText',false,text);
     }
   });
 
