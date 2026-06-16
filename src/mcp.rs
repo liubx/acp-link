@@ -242,7 +242,7 @@ async fn handle_tools_call(id: &Value, params: &Value, state: &McpState) -> Valu
     }
 }
 
-/// 处理 web_send_file MCP tool：复制文件到 .uploads/ 并通过 broadcast 通知 SSE 流
+/// 处理 web_send_file MCP tool：复制文件到 .tmp/download/ 并通过 broadcast 通知 SSE 流
 async fn handle_web_send_file(args: &Value) -> Result<Value, String> {
     let file_path = args.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
     let session = args.get("session").and_then(|v| v.as_str()).unwrap_or("");
@@ -265,9 +265,9 @@ async fn handle_web_send_file(args: &Value) -> Result<Value, String> {
     // 读取源文件
     let data = std::fs::read(file_path).map_err(|e| format!("读取文件失败: {e}"))?;
 
-    // 保存到 cwd/.uploads/（使用时间戳避免冲突）
+    // 保存到 cwd/.tmp/download/（使用时间戳避免冲突）
     let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
-    let upload_dir = cwd.join(".uploads");
+    let upload_dir = cwd.join(".tmp/download");
     let _ = std::fs::create_dir_all(&upload_dir);
 
     let safe_name = file_name.replace('/', "_").replace('\\', "_");
@@ -290,7 +290,7 @@ async fn handle_web_send_file(args: &Value) -> Result<Value, String> {
         || lower.ends_with(".bmp");
 
     // 构建 URL（相对路径，前端通过静态文件服务访问）
-    let url = format!("/.uploads/{}", urlencoding::encode(&final_name));
+    let url = format!("/.tmp/download/{}", urlencoding::encode(&final_name));
 
     // 通过 broadcast 通知活跃的 SSE 流
     let event = crate::api::WebFileEvent {
