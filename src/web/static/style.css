@@ -226,13 +226,15 @@ a:active {
 
 .pathbar .home {
   color: var(--accent);
-  font-weight: 600;
-  margin-right: 2px;
+  margin-right: 4px;
   /* 可点击区域扩大 */
-  padding: 4px 6px;
-  margin: -4px 0 -4px -6px;
+  padding: 6px;
+  margin: -6px 0 -6px -6px;
   border-radius: var(--radius-sm);
-  transition: background .12s var(--ease);
+  transition: background .12s var(--ease), color .12s var(--ease);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 .pathbar .home:hover {
   text-decoration: none;
