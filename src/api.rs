@@ -16,8 +16,15 @@ use axum::routing::post;
 use tokio::sync::{RwLock, broadcast};
 
 use crate::link::{AcpBridge, StreamEvent};
-use crate::chat::CHAT_WIDGET;
+use crate::chat::chat_widget;
 use base64::Engine;
+
+/// 编译时嵌入的静态资源
+const STYLE_CSS: &str = include_str!("web/static/style.css");
+const DIRECTORY_CSS: &str = include_str!("web/static/directory.css");
+const MARKDOWN_CSS: &str = include_str!("web/static/markdown.css");
+const CODE_CSS: &str = include_str!("web/static/code.css");
+const THEME_JS: &str = include_str!("web/static/theme.js");
 
 /// web_send_file 事件：MCP tool 执行后推送给 SSE 流
 #[derive(Debug, Clone)]
@@ -232,98 +239,28 @@ fn render_directory(dir_path: &PathBuf, relative: &str) -> Html<String> {
         ));
     }
 
+    let chat_widget = chat_widget();
     let html = format!(
         r#"<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>/{relative}</title>
-{THEME_HEAD}
-<style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{max-width:680px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-system,BlinkMacSystemFont,'Noto Sans SC','Inter',system-ui,sans-serif;min-height:100dvh;-webkit-font-smoothing:antialiased;letter-spacing:-.01em;}}
-h2{{font-size:.82em;font-weight:500;color:var(--muted);margin:0;padding:14px 24px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--border);letter-spacing:.01em;}}
-h2 a{{color:var(--muted);text-decoration:none;transition:all .2s cubic-bezier(.4,0,.2,1);}}
-h2 a:hover{{color:var(--accent-light)}}
-h2 a.home{{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--hover-bg);color:var(--muted);transition:all .2s cubic-bezier(.4,0,.2,1);}}
-h2 a.home:hover{{background:var(--accent);color:#fff;transform:scale(1.05)}}
-h2 a.home svg{{display:block}}
-h2 .sep{{color:var(--muted);opacity:.4;font-weight:300;font-size:.9em;margin:0 2px;}}
-h2 .current{{color:var(--fg);font-weight:600}}
-.list{{border-radius:14px;overflow:hidden;background:var(--card-bg);border:1px solid var(--border);box-shadow:var(--shadow);}}
-.entry{{display:block;padding:13px 24px 13px 28px;border-bottom:1px solid var(--border);position:relative;overflow:hidden;transition:all .2s cubic-bezier(.4,0,.2,1);}}
-.entry:last-child{{border-bottom:none}}
-.entry::before{{content:'';position:absolute;left:12px;top:50%;transform:translateY(-50%);width:3px;height:20px;border-radius:2px;background:var(--border);transition:all .2s cubic-bezier(.4,0,.2,1);}}
-.dir::before{{background:#f59e0b;}}
-.md::before{{background:var(--accent);}}
-.file::before{{background:var(--muted);opacity:.4;}}
-.entry:hover{{background:var(--hover-bg)}}
-.entry:hover::before{{height:28px;}}
-.entry:active{{transform:scale(.995)}}
-.entry a{{text-decoration:none;color:var(--fg);font-size:.88em;font-weight:400;display:flex;align-items:center;gap:12px;transition:color .15s;}}
-.entry:hover a{{color:var(--accent-light)}}
-.dir a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f59e0b'%3E%3Cpath d='M2 6a2 2 0 012-2h5l2 2h9a2 2 0 012 2v10a2 2 0 01-2 2H4a2 2 0 01-2-2V6z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
-.md a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%236366f1'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM8 13h8v1.5H8V13zm0 3.5h5V18H8v-1.5z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
-.file a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%239ca3af'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.7;}}
-.config a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2310b981'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM8 13h8v1.5H8V13zm0 3h6v1.5H8V16z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
-.code a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%23f472b6'%3E%3Cpath d='M6 2a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8l-6-6H6zm7 1.5L18.5 9H14a1 1 0 01-1-1V3.5zM9.4 12.6l-2.4 2.4 2.4 2.4-.8.8L5.4 15l3.2-3.2.8.8zm5.2 0l2.4 2.4-2.4 2.4.8.8 3.2-3.2-3.2-3.2-.8.8z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
-.image a::before{{content:'';display:inline-block;width:20px;height:20px;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%238b5cf6'%3E%3Cpath d='M4 4a2 2 0 00-2 2v12a2 2 0 002 2h16a2 2 0 002-2V6a2 2 0 00-2-2H4zm0 2h16v8.6l-3.3-3.3a1 1 0 00-1.4 0L10 16.6l-2.3-2.3a1 1 0 00-1.4 0L4 16.6V6zm4 2a2 2 0 100 4 2 2 0 000-4z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:.85;}}
-.config::before{{background:#10b981 !important;}}
-.code::before{{background:#f472b6 !important;}}
-.image::before{{background:#8b5cf6 !important;}}
-.dir a{{font-weight:500}}
-.dir a::after{{content:'';display:inline-block;width:14px;height:14px;margin-left:auto;flex-shrink:0;background:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='%236b7280'%3E%3Cpath fill-rule='evenodd' d='M7.21 14.77a.75.75 0 01.02-1.06L11.168 10 7.23 6.29a.75.75 0 111.04-1.08l4.5 4.25a.75.75 0 010 1.08l-4.5 4.25a.75.75 0 01-1.06-.02z'/%3E%3C/svg%3E") center/contain no-repeat;opacity:0;transform:translateX(-6px);transition:all .2s cubic-bezier(.4,0,.2,1);}}
-.entry:hover .dir a::after,.dir:hover a::after{{opacity:.7;transform:translateX(0)}}
-@media(max-width:600px){{body{{padding:48px 16px 80px}}.list{{border-radius:12px;}}.entry{{padding:14px 16px}}.entry a{{font-size:.87em;gap:10px}}h2{{padding:12px 16px;font-size:.8em;}}}}
-@media(min-width:1024px){{body{{max-width:720px;padding:100px 32px 120px;}}}}
-</style></head><body>
+<style>{css_base}{css_page}</style>
+<script>{theme_js}</script>
+</head><body class="page-directory">
 <button class="theme-toggle" onclick="toggleTheme()"></button>
 <div class="list">
 <h2><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</h2>
 {items_html}
-</div>{CHAT_WIDGET}</body></html>"#
+</div>{chat_widget}</body></html>"#,
+        relative = relative,
+        css_base = STYLE_CSS,
+        css_page = DIRECTORY_CSS,
+        theme_js = THEME_JS,
+        breadcrumb = breadcrumb,
+        items_html = items_html,
+        chat_widget = chat_widget,
     );
 
     Html(html)
 }
-
-/// 公共主题切换 CSS 变量 + JS（目录页和 markdown 页共用）
-const THEME_HEAD: &str = r#"<style>
-:root{--bg:#fafafa;--fg:#1a1a1a;--muted:#6b7280;--border:rgba(0,0,0,.08);--card-bg:#ffffff;--link:#2563eb;--hover-bg:rgba(99,102,241,.04);--accent:#4f46e5;--accent-light:#6366f1;--code-bg:#f1f5f9;--shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);}
-@media(prefers-color-scheme:dark){:root{--bg:#0f0f0f;--fg:#e4e4e7;--muted:#8b8b8b;--border:rgba(255,255,255,.08);--card-bg:#1a1a1a;--link:#93c5fd;--hover-bg:rgba(99,102,241,.08);--accent:#6366f1;--accent-light:#818cf8;--code-bg:#141414;--shadow:0 1px 3px rgba(0,0,0,.2),0 8px 24px rgba(0,0,0,.3);}}
-html[data-theme=light]{--bg:#fafafa;--fg:#1a1a1a;--muted:#6b7280;--border:rgba(0,0,0,.08);--card-bg:#ffffff;--link:#2563eb;--hover-bg:rgba(99,102,241,.04);--accent:#4f46e5;--accent-light:#6366f1;--code-bg:#f1f5f9;--shadow:0 1px 3px rgba(0,0,0,.04),0 8px 24px rgba(0,0,0,.06);}
-html[data-theme=dark]{--bg:#0f0f0f;--fg:#e4e4e7;--muted:#8b8b8b;--border:rgba(255,255,255,.08);--card-bg:#1a1a1a;--link:#93c5fd;--hover-bg:rgba(99,102,241,.08);--accent:#6366f1;--accent-light:#818cf8;--code-bg:#141414;--shadow:0 1px 3px rgba(0,0,0,.2),0 8px 24px rgba(0,0,0,.3);}
-body{background:var(--bg);color:var(--fg);transition:background .3s cubic-bezier(.4,0,.2,1),color .3s cubic-bezier(.4,0,.2,1);}
-.theme-toggle{position:fixed;top:20px;right:20px;width:38px;height:38px;border-radius:10px;border:1px solid var(--border);background:var(--card-bg);cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:18px;z-index:999;transition:all .2s cubic-bezier(.4,0,.2,1);box-shadow:var(--shadow);backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);}
-.theme-toggle:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(79,70,229,.15);border-color:var(--accent-light);}
-.theme-toggle:active{transform:translateY(0) scale(.96);}
-</style>
-<script>
-(function(){
-  var t=localStorage.getItem('theme');
-  if(t&&t!=='auto')document.documentElement.setAttribute('data-theme',t);
-})();
-function toggleTheme(){
-  var h=document.documentElement;
-  var c=localStorage.getItem('theme')||'auto';
-  var next=c==='auto'?'light':(c==='light'?'dark':'auto');
-  if(next==='auto'){
-    h.removeAttribute('data-theme');
-    localStorage.setItem('theme','auto');
-  }else{
-    h.setAttribute('data-theme',next);
-    localStorage.setItem('theme',next);
-  }
-  updateIcon();
-}
-function updateIcon(){
-  var btn=document.querySelector('.theme-toggle');
-  if(!btn)return;
-  var t=localStorage.getItem('theme')||'auto';
-  var sun='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>';
-  var moon='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M21 12.79A9 9 0 1111.21 3 7 7 0 0021 12.79z"/></svg>';
-  var auto='<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="12" cy="12" r="9"/><path d="M12 3v18" stroke="currentColor"/><path d="M12 3a9 9 0 010 18" fill="currentColor" opacity=".2"/></svg>';
-  btn.innerHTML=t==='dark'?sun:(t==='light'?moon:auto);
-  btn.title=t==='dark'?'切换到跟随系统':(t==='light'?'切换到深色':'切换到浅色');
-}
-document.addEventListener('DOMContentLoaded',updateIcon);
-</script>"#;
 
 /// 解析 data URI，返回 (mime, base64_data)
 fn parse_data_uri(input: &str) -> (String, &str) {
@@ -367,48 +304,23 @@ fn render_markdown(md: &str, relative: &str) -> String {
         }
     }
 
+    let chat_widget = chat_widget();
     format!(r#"<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{relative}</title>
-{THEME_HEAD}
-<style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{max-width:860px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-system,BlinkMacSystemFont,'Noto Sans SC','Inter',system-ui,sans-serif;min-height:100dvh;-webkit-font-smoothing:antialiased;line-height:1.75;letter-spacing:-.01em;}}
-.nav{{background:var(--card-bg);border:1px solid var(--border);border-radius:14px 14px 0 0;display:flex;align-items:center;overflow:hidden;border-bottom:1px solid var(--border);}}
-.nav-inner{{display:flex;align-items:center;gap:8px;font-size:.82em;padding:14px 24px;font-weight:500;color:var(--muted);letter-spacing:.01em;}}
-.content{{background:var(--card-bg);border:1px solid var(--border);border-top:none;border-radius:0 0 14px 14px;padding:40px 36px;box-shadow:var(--shadow);}}
-.nav a{{color:var(--muted);text-decoration:none;transition:color .2s cubic-bezier(.4,0,.2,1);}}
-.nav a:hover{{color:var(--accent-light)}}
-.nav a.home{{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--hover-bg);color:var(--muted);transition:all .2s cubic-bezier(.4,0,.2,1);}}
-.nav a.home:hover{{background:var(--accent);color:#fff;transform:scale(1.05)}}
-.nav .sep{{color:var(--muted);opacity:.4;font-weight:300;margin:0 2px;}}
-.nav .current{{color:var(--fg);font-weight:600;}}
-.content h1,.content h2,.content h3{{border-bottom:1px solid var(--border);padding-bottom:0.4em;margin-top:1.8em;margin-bottom:0.6em;letter-spacing:-.02em;}}
-.content h1{{font-size:1.6em;font-weight:700;}}
-.content h2{{font-size:1.3em;font-weight:650;}}
-.content h3{{font-size:1.1em;font-weight:600;border-bottom:none;}}
-.content h1:first-child,.content h2:first-child{{margin-top:0;}}
-.content code{{background:var(--code-bg);padding:2px 7px;border-radius:5px;font-size:0.85em;font-family:'SF Mono','JetBrains Mono','Fira Code',monospace;}}
-.content pre{{background:var(--code-bg);padding:18px 20px;border-radius:10px;overflow-x:auto;margin:1.2em 0;border:1px solid var(--border);position:relative;}}
-.content pre::before{{content:'';position:absolute;left:0;top:12px;bottom:12px;width:3px;border-radius:0 2px 2px 0;background:var(--accent);opacity:.5;}}
-.content pre code{{background:none;padding:0;font-size:.84em;line-height:1.6;}}
-.content table{{border-collapse:collapse;width:100%;margin:1.2em 0;border-radius:8px;overflow:hidden;border:1px solid var(--border);}}
-.content th,.content td{{border:1px solid var(--border);padding:10px 14px;text-align:left;font-size:.9em;}}
-.content th{{background:var(--hover-bg);font-weight:600;font-size:.84em;text-transform:none;letter-spacing:.01em;}}
-.content blockquote{{border-left:3px solid var(--accent-light);margin:1.2em 0;padding:0.6em 20px;color:var(--muted);background:var(--hover-bg);border-radius:0 10px 10px 0;}}
-.content img{{max-width:100%;border-radius:10px;margin:1.2em 0;}}
-.content a{{color:var(--link);text-decoration:none;border-bottom:1px solid transparent;transition:border-color .2s;}}
-.content a:hover{{border-bottom-color:var(--link)}}
-.content ul,.content ol{{padding-left:1.5em;margin:0.6em 0;}}
-.content li{{margin:0.35em 0;}}
-.content li::marker{{color:var(--muted);}}
-.content hr{{border:none;border-top:1px solid var(--border);margin:2.5em 0;}}
-.content p{{margin:0.6em 0;}}
-@media(max-width:600px){{body{{padding:48px 16px 80px}}.content{{padding:24px 18px;border-radius:0 0 12px 12px;}}.nav{{border-radius:12px 12px 0 0;}}.nav-inner{{padding:12px 16px;font-size:.8em;}}.content h1{{font-size:1.35em;}}.content h2{{font-size:1.15em;}}.content pre{{padding:14px 12px;font-size:.82em;border-radius:8px;}}.content table{{font-size:.84em;}}.content th,.content td{{padding:8px 10px;}}}}
-@media(min-width:1024px){{body{{max-width:920px;padding:100px 40px 120px;}}.content{{padding:48px 44px;}}}}
-</style></head><body>
+<style>{css_base}{css_page}</style>
+<script>{theme_js}</script>
+</head><body class="page-markdown">
 <button class="theme-toggle" onclick="toggleTheme()"></button>
 <div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div></div>
 <div class="content">{html_output}</div>
-{CHAT_WIDGET}</body></html>"#)
+{chat_widget}</body></html>"#,
+        relative = relative,
+        css_base = STYLE_CSS,
+        css_page = MARKDOWN_CSS,
+        theme_js = THEME_JS,
+        breadcrumb = breadcrumb,
+        html_output = html_output,
+        chat_widget = chat_widget,
+    )
 }
 
 /// 判断文件扩展名是否为可渲染的代码/文本文件
@@ -488,35 +400,26 @@ fn render_code_file(content: &str, ext: &str, relative: &str) -> String {
         format!("{:.1} MB", file_size as f64 / (1024.0 * 1024.0))
     };
 
+    let chat_widget = chat_widget();
     format!(r#"<!DOCTYPE html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>{relative}</title>
-{THEME_HEAD}
-<style>
-*{{margin:0;padding:0;box-sizing:border-box}}
-body{{max-width:960px;margin:0 auto;padding:80px 24px 100px;font-family:-apple-system,BlinkMacSystemFont,'Noto Sans SC','Inter',system-ui,sans-serif;min-height:100dvh;-webkit-font-smoothing:antialiased;}}
-.nav{{background:var(--card-bg);border:1px solid var(--border);border-radius:14px 14px 0 0;display:flex;align-items:center;justify-content:space-between;overflow:hidden;border-bottom:1px solid var(--border);}}
-.nav-inner{{display:flex;align-items:center;gap:8px;font-size:.82em;padding:14px 24px;font-weight:500;color:var(--muted);letter-spacing:.01em;}}
-.nav-meta{{font-size:.75em;color:var(--muted);padding:14px 24px;opacity:.7;}}
-.code-wrap{{background:#2b303b;border:1px solid var(--border);border-top:none;border-radius:0 0 14px 14px;overflow:hidden;box-shadow:var(--shadow);}}
-.code-wrap pre{{margin:0;padding:0;overflow-x:auto;font-family:'SF Mono','JetBrains Mono','Fira Code','Cascadia Code',monospace;font-size:.82em;line-height:1.7;tab-size:4;}}
-.code-table{{border-collapse:collapse;width:100%;}}
-.code-table td{{padding:0;vertical-align:top;white-space:pre;}}
-.code-table .ln{{width:1%;min-width:44px;padding:0 12px 0 16px;text-align:right;color:#65737e;user-select:none;-webkit-user-select:none;font-size:.85em;border-right:1px solid rgba(255,255,255,.06);}}
-.code-table .code{{padding:0 16px;}}
-.code-table tr:first-child .ln,.code-table tr:first-child .code{{padding-top:16px;}}
-.code-table tr:last-child .ln,.code-table tr:last-child .code{{padding-bottom:16px;}}
-.nav a{{color:var(--muted);text-decoration:none;transition:color .2s cubic-bezier(.4,0,.2,1);}}
-.nav a:hover{{color:var(--accent-light)}}
-.nav a.home{{display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:8px;background:var(--hover-bg);color:var(--muted);transition:all .2s cubic-bezier(.4,0,.2,1);}}
-.nav a.home:hover{{background:var(--accent);color:#fff;transform:scale(1.05)}}
-.nav .sep{{color:var(--muted);opacity:.4;font-weight:300;margin:0 2px;}}
-.nav .current{{color:var(--fg);font-weight:600;}}
-@media(max-width:600px){{body{{padding:48px 16px 80px}}.code-wrap pre{{padding:14px 12px;font-size:.78em;}}.nav-inner{{padding:12px 16px;}}.nav-meta{{padding:12px 16px;}}}}
-@media(min-width:1024px){{body{{max-width:1040px;padding:100px 40px 120px;}}}}
-</style></head><body>
+<style>{css_base}{css_page}</style>
+<script>{theme_js}</script>
+</head><body class="page-code">
 <button class="theme-toggle" onclick="toggleTheme()"></button>
 <div class="nav"><div class="nav-inner"><a href="/" class="home" title="根目录"><svg width="14" height="14" viewBox="0 0 16 16" fill="currentColor"><path d="M8.354 1.146a.5.5 0 00-.708 0l-6 6A.5.5 0 002 7.5V13a1 1 0 001 1h3a1 1 0 001-1v-2.5h2V13a1 1 0 001 1h3a1 1 0 001-1V7.5a.5.5 0 00.354-.854l-6-6z"/></svg></a>{breadcrumb}</div><div class="nav-meta">{line_count} 行 · {size_str} · {ext}</div></div>
 <div class="code-wrap"><pre>{code_html}</pre></div>
-{CHAT_WIDGET}</body></html>"#)
+{chat_widget}</body></html>"#,
+        relative = relative,
+        css_base = STYLE_CSS,
+        css_page = CODE_CSS,
+        theme_js = THEME_JS,
+        breadcrumb = breadcrumb,
+        line_count = line_count,
+        size_str = size_str,
+        ext = ext,
+        code_html = code_html,
+        chat_widget = chat_widget,
+    )
 }
 
 #[derive(serde::Deserialize)]
