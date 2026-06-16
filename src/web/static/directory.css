@@ -1,40 +1,94 @@
-/* === Directory Listing === */
+/* ============================================
+   目录列表页 — 文件浏览器
+   移动优先，触摸友好
+   ============================================ */
+
+/* === 页面容器 === */
 .page-directory {
-  max-width: 600px;
-  margin: 0 auto;
-  padding: 56px 20px 100px;
+  /* 移动端: 全宽，安全边距 */
+  width: 100%;
+  padding: 48px 16px 100px;
   min-height: 100dvh;
+  margin: 0 auto;
 }
 
-/* === File List === */
+/* 平板及以上 */
+@media (min-width: 768px) {
+  .page-directory {
+    max-width: 600px;
+    padding: 56px 24px 100px;
+  }
+}
+
+/* 大屏 */
+@media (min-width: 1024px) {
+  .page-directory {
+    max-width: 640px;
+    padding: 64px 32px 120px;
+  }
+}
+
+/* === 文件列表容器 === */
 .file-list {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   overflow: hidden;
   background: var(--surface);
+  /* 长列表平滑滚动 */
+  -webkit-overflow-scrolling: touch;
 }
 
+/* === 文件条目 === */
 .entry {
   display: block;
-  padding: 10px 14px;
+  /* 移动端: 48px 最小高度，触摸友好 */
+  min-height: 48px;
+  padding: 12px 16px;
   border-bottom: 1px solid var(--border);
-  transition: background .1s var(--ease);
+  transition:
+    background-color .1s var(--ease),
+    transform .08s var(--ease);
 }
-.entry:last-child { border-bottom: none; }
-.entry:hover { background: var(--hover); }
-.entry:active { opacity: .8; }
+.entry:last-child {
+  border-bottom: none;
+}
 
+/* 悬停态 */
+.entry:hover {
+  background: var(--hover);
+}
+
+/* 按下态 - 视觉按压反馈 */
+.entry:active {
+  background: var(--active);
+  transform: scale(.995);
+}
+
+/* 焦点态 (键盘) */
+.entry:focus-within {
+  background: var(--accent-dim);
+}
+
+/* === 条目链接布局 === */
 .entry a {
   text-decoration: none;
   color: var(--fg);
-  font-size: 13px;
+  font-size: .9375rem;
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 12px;
+  min-height: 24px;
+  transition: color .1s var(--ease);
 }
-.entry:hover a { color: var(--fg); text-decoration: none; }
+.entry a:hover {
+  text-decoration: none;
+}
+.entry a:focus-visible {
+  box-shadow: none; /* 用 entry 的 focus-within 代替 */
+  border-radius: 0;
+}
 
-/* 文件类型颜色标记 - 用文件名后缀色块 */
+/* === 文件类型颜色方块 (8px) === */
 .entry a::before {
   content: '';
   display: block;
@@ -43,40 +97,69 @@
   border-radius: 2px;
   flex-shrink: 0;
 }
-.entry.dir a { font-weight: 500; }
-.entry.dir a::before { background: #eab308; border-radius: 2px; }
-.entry.md a::before { background: var(--accent); }
-.entry.config a::before { background: #10b981; }
-.entry.code a::before { background: #f472b6; }
-.entry.image a::before { background: #8b5cf6; }
-.entry.file a::before { background: var(--dim); opacity: .5; }
 
-/* 文件夹 chevron */
+/* 类型颜色 */
+.entry.dir a::before   { background: #eab308; }  /* 目录: 黄色 */
+.entry.md a::before    { background: var(--accent); }  /* Markdown: 青色 */
+.entry.config a::before { background: #10b981; } /* 配置: 绿色 */
+.entry.code a::before  { background: #f472b6; }  /* 代码: 粉色 */
+.entry.image a::before { background: #8b5cf6; }  /* 图片: 紫色 */
+.entry.file a::before  { background: var(--dim); opacity: .6; } /* 其他: 灰色 */
+
+/* 目录加粗 */
+.entry.dir a {
+  font-weight: 600;
+}
+
+/* === 目录 Chevron 箭头 === */
 .entry.dir a::after {
   content: '';
   margin-left: auto;
-  width: 14px;
-  height: 14px;
-  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23a1a1aa'%3E%3Cpath d='M6.22 4.22a.75.75 0 011.06 0l3.25 3.25a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 010-1.06z'/%3E%3C/svg%3E") center/contain no-repeat;
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16' fill='%23a1a1aa'%3E%3Cpath d='M6.22 4.22a.75.75 0 011.06 0l3.25 3.25a.75.75 0 010 1.06l-3.25 3.25a.75.75 0 01-1.06-1.06L8.94 8 6.22 5.28a.75.75 0 010-1.06z'/%3E%3C/svg%3E") center / contain no-repeat;
   opacity: 0;
-  transition: opacity .1s;
+  transition: opacity .12s var(--ease), transform .12s var(--ease);
 }
-.entry.dir:hover a::after { opacity: 1; }
+.entry.dir:hover a::after {
+  opacity: 1;
+  transform: translateX(2px);
+}
 
-/* 文件大小/时间（如果有） */
+/* 移动端始终显示 chevron (无 hover) */
+@media (hover: none) {
+  .entry.dir a::after {
+    opacity: .5;
+  }
+}
+
+/* === 文件大小/元信息 === */
 .entry .size {
   margin-left: auto;
   font-family: var(--mono);
-  font-size: 11px;
+  font-size: .6875rem;
   color: var(--dim);
+  white-space: nowrap;
 }
 
-/* === Responsive === */
-@media (max-width: 600px) {
-  .page-directory { padding: 40px 12px 80px; }
-  .entry { padding: 11px 12px; }
-  .entry a { font-size: 13px; gap: 8px; }
+/* === 响应式微调 === */
+
+/* 较大移动屏 */
+@media (min-width: 480px) {
+  .entry {
+    padding: 11px 16px;
+  }
 }
-@media (min-width: 1024px) {
-  .page-directory { max-width: 640px; }
+
+/* 平板以上: 可适当缩小字号 */
+@media (min-width: 768px) {
+  .entry {
+    min-height: 40px;
+    padding: 10px 14px;
+  }
+  .entry a {
+    font-size: .875rem;
+    gap: 10px;
+  }
 }
