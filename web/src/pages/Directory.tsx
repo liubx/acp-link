@@ -29,15 +29,15 @@ function getColor(entry: Entry): string {
 }
 
 export function Directory({ entries, basePath }: { entries: Entry[]; basePath: string }) {
-  // 确保 basePath 以 / 结尾
-  const base = basePath.endsWith('/') ? basePath : basePath + '/'
+  // 确保 basePath 干净（不重复斜杠）
+  const base = basePath === '/' ? '' : basePath.replace(/\/+$/, '')
   return (
     <div className="max-w-[600px] mx-auto px-4 sm:px-5 pb-24">
       <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)]">
         {entries.map((entry) => (
           <Link
             key={entry.name}
-            href={entry.is_dir ? `${base}${entry.name}/` : `${base}${entry.name}`}
+            href={`${base}/${entry.name}`}
             className="flex items-center gap-3 px-4 py-3 min-h-[48px] sm:min-h-[40px]
               border-b border-[var(--color-border)] last:border-b-0
               hover:bg-[var(--color-bg)] active:scale-[.995]
