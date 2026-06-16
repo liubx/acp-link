@@ -1,9 +1,10 @@
 import { useState, useEffect } from 'react'
-import { FolderSimple, File, FileCode, FileText, Image, CaretRight, CaretDown } from '@phosphor-icons/react'
+import { FolderSimple, File, FileCode, FileText, Image, CaretRight, CaretDown, X } from '@phosphor-icons/react'
 
 interface Props {
   currentPath: string
   onNavigate: (path: string) => void
+  onClose?: () => void
 }
 
 interface TreeEntry {
@@ -89,7 +90,7 @@ function TreeItem({ entry, depth, currentPath, onNavigate, onToggle }: {
   )
 }
 
-export function Sidebar({ currentPath, onNavigate }: Props) {
+export function Sidebar({ currentPath, onNavigate, onClose }: Props) {
   const [tree, setTree] = useState<TreeEntry[]>([])
 
   // 加载根目录
@@ -116,7 +117,6 @@ export function Sidebar({ currentPath, onNavigate }: Props) {
       return items.map(item => {
         if (item.path === path && item.is_dir) {
           if (!item.loaded) {
-            // 需要加载子目录
             loadChildren(path)
             return { ...item, expanded: true, loaded: true }
           }
@@ -146,7 +146,7 @@ export function Sidebar({ currentPath, onNavigate }: Props) {
         }))
         setTree(prev => insertChildren(prev, path, children))
       }
-    } catch {}
+    } catch { /* ignore */ }
   }
 
   const insertChildren = (items: TreeEntry[], parentPath: string, children: TreeEntry[]): TreeEntry[] => {
@@ -162,7 +162,23 @@ export function Sidebar({ currentPath, onNavigate }: Props) {
   }
 
   return (
-    <aside className="w-56 lg:w-64 border-r border-[var(--color-border)] bg-[var(--color-surface)] overflow-y-auto flex-shrink-0 hidden sm:block">
+    <aside className="w-56 lg:w-64 border-r border-[var(--color-border)] bg-[var(--color-surface)] overflow-y-auto flex-shrink-0
+      max-sm:fixed max-sm:inset-0 max-sm:w-full max-sm:z-50 max-sm:border-r-0
+      sm:relative sm:block">
+      {/* 移动端关闭按钮 */}
+      <div className="h-11 flex items-center justify-between px-3 border-b border-[var(--color-border)] sm:hidden">
+        <span className="text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wide">文件</span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-bg)] transition-colors cursor-pointer"
+            aria-label="关闭侧边栏"
+          >
+            <X size={14} weight="bold" />
+          </button>
+        )}
+      </div>
+
       <div className="py-2">
         {tree.length === 0 ? (
           <div className="px-4 py-8 text-xs text-[var(--color-dim)] text-center">

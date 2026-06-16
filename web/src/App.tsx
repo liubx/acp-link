@@ -21,17 +21,46 @@ export interface FileInfo {
   size?: string
 }
 
+// 媒体查询 hook
+function useIsDesktop() {
+  const [isDesktop, setIsDesktop] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 640px)').matches : true
+  )
+
+  useEffect(() => {
+    const mq = window.matchMedia('(min-width: 640px)')
+    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
+    mq.addEventListener('change', handler)
+    return () => mq.removeEventListener('change', handler)
+  }, [])
+
+  return isDesktop
+}
+
 export function App() {
   const [currentPath, setCurrentPath] = useState('/')
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [sidebarOpen, setSidebarOpen] = useState(true)
+  const isDesktop = useIsDesktop()
+  const [sidebarOpen, setSidebarOpen] = useState(() =>
+    typeof window !== 'undefined' ? window.matchMedia('(min-width: 640px)').matches : true
+  )
   const [chatOpen, setChatOpen] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light'>(() => {
     const stored = localStorage.getItem('theme')
     if (stored === 'light') return 'light'
     return 'dark'
   })
+
+  // 屏幕变化时自动关闭移动端 overlay
+  useEffect(() => {
+    if (isDesktop) {
+      // 切到桌面端，如果侧边栏关着可以打开
+    } else {
+      // 切到移动端，侧边栏默认关闭
+      setSidebarOpen(false)
+    }
+  }, [isDesktop])
 
   // 主题切换
   useEffect(() => {
@@ -55,7 +84,12 @@ export function App() {
 
     // 更新浏览器 URL（不刷新）
     window.history.pushState(null, '', path)
-  }, [])
+
+    // 移动端导航后自动关闭侧边栏
+    if (!isDesktop) {
+      setSidebarOpen(false)
+    }
+  }, [isDesktop])
 
   // 初始加载
   useEffect(() => {
@@ -74,6 +108,11 @@ export function App() {
     window.addEventListener('popstate', handler)
     return () => window.removeEventListener('popstate', handler)
   }, [loadPath])
+
+  // 移动端侧边栏关闭回调
+  const handleSidebarClose = useCallback(() => {
+    setSidebarOpen(false)
+  }, [])
 
   return (
     <div className="h-dvh flex flex-col overflow-hidden bg-[var(--color-bg)]">
@@ -96,6 +135,7 @@ export function App() {
           <Sidebar
             currentPath={currentPath}
             onNavigate={loadPath}
+            onClose={handleSidebarClose}
           />
         )}
 

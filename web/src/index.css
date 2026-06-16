@@ -96,3 +96,124 @@ html[data-theme="light"] {
 ::-webkit-scrollbar-thumb:hover {
   background: var(--color-dim);
 }
+
+/* Chat Markdown 样式 */
+.chat-markdown strong {
+  font-weight: 600;
+}
+
+.chat-markdown em {
+  font-style: italic;
+}
+
+.chat-markdown .inline-code {
+  font-family: 'Geist Mono', monospace;
+  font-size: 0.85em;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+
+.chat-markdown .code-block-wrapper {
+  margin: 8px 0;
+  border-radius: 8px;
+  overflow: hidden;
+  background: var(--color-bg);
+  border: 1px solid var(--color-border);
+}
+
+.chat-markdown .code-block-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 10px;
+  background: var(--color-border);
+  font-size: 11px;
+}
+
+.chat-markdown .code-lang {
+  color: var(--color-muted);
+  text-transform: uppercase;
+  font-weight: 500;
+  font-size: 10px;
+}
+
+.chat-markdown .copy-btn {
+  color: var(--color-muted);
+  cursor: pointer;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 11px;
+  transition: all 0.15s;
+}
+
+.chat-markdown .copy-btn:hover {
+  color: var(--color-fg);
+  background: var(--color-surface);
+}
+
+.chat-markdown pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  font-family: 'Geist Mono', monospace;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.chat-markdown pre code {
+  font-family: inherit;
+}
+
+.chat-markdown .chat-link {
+  color: var(--color-accent);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.chat-markdown .chat-link:hover {
+  opacity: 0.8;
+}
+
+.chat-markdown .chat-img {
+  max-width: 100%;
+  border-radius: 6px;
+  margin: 6px 0;
+}
+
+.chat-markdown .chat-list {
+  padding-left: 1.2em;
+  margin: 4px 0;
+}
+
+.chat-markdown ul.chat-list {
+  list-style: disc;
+}
+
+.chat-markdown ol.chat-list {
+  list-style: decimal;
+}
+
+.chat-markdown .chat-list li {
+  margin: 2px 0;
+}
+
+.chat-markdown .chat-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 8px 0;
+  font-size: 12px;
+}
+
+.chat-markdown .chat-table th,
+.chat-markdown .chat-table td {
+  border: 1px solid var(--color-border);
+  padding: 4px 8px;
+  text-align: left;
+}
+
+.chat-markdown .chat-table th {
+  background: var(--color-bg);
+  font-weight: 600;
+}
