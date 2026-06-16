@@ -61,7 +61,8 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--surface, #18181b);
+  background: var(--bg);
+  border: 1px solid var(--border);
 
   /* 移动端默认: 全屏 */
   top: 0;
@@ -87,6 +88,7 @@
     max-height: calc(100vh - 100px);
     border-radius: 12px;
     border: 1px solid var(--border, #27272a);
+    background: var(--bg);
     box-shadow: 0 16px 48px rgba(0, 0, 0, .25);
     animation: chatSlideIn .2s var(--ease);
   }
@@ -248,8 +250,8 @@
 /* AI 消息 - 表面色，左对齐 */
 .msg-bot {
   align-self: flex-start;
-  background: var(--surface, #18181b);
-  border: 1px solid var(--border, #27272a);
+  background: var(--surface);
+  border: 1px solid var(--border);
   border-bottom-left-radius: 4px;
   color: var(--fg);
 }
@@ -299,6 +301,7 @@
   /* 移动端底部安全区 */
   padding-bottom: calc(12px + env(safe-area-inset-bottom, 0px));
   flex-shrink: 0;
+  background: var(--surface);
 }
 
 #chat-input-row {
@@ -469,21 +472,3 @@
   }
 }
 
-/* === 深色模式下消息区渐变，增加深度感 === */
-@media (prefers-color-scheme: dark) {
-  #chat-messages {
-    background: linear-gradient(
-      to bottom,
-      var(--surface) 0%,
-      rgba(9, 9, 11, .5) 100%
-    );
-  }
-}
-
-html[data-theme="dark"] #chat-messages {
-  background: linear-gradient(
-    to bottom,
-    var(--surface) 0%,
-    rgba(9, 9, 11, .5) 100%
-  );
-}
