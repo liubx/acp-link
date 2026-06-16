@@ -27,7 +27,6 @@ export function App() {
     setLoading(true)
     setError(false)
 
-    // 去掉尾斜杠再请求 API
     const cleanPath = location === '/' ? '' : location.replace(/\/+$/, '')
     const apiUrl = `/api/files${cleanPath}`
 
@@ -55,24 +54,28 @@ export function App() {
           <Pathbar path={location} />
         </div>
 
-        {/* 内容区 */}
+        {/* 加载骨架屏 */}
         {loading && (
-          <div className="max-w-[640px] mx-auto px-4 pt-4">
-            <div className="animate-pulse space-y-3">
-              <div className="h-4 bg-[var(--color-surface)] rounded w-1/3" />
-              <div className="h-10 bg-[var(--color-surface)] rounded" />
-              <div className="h-10 bg-[var(--color-surface)] rounded" />
-              <div className="h-10 bg-[var(--color-surface)] rounded" />
+          <div className="max-w-[600px] mx-auto px-4 pt-4">
+            <div className="animate-pulse space-y-2">
+              {[1, 2, 3, 4, 5].map(i => (
+                <div key={i} className="flex items-center gap-3 px-4 py-3 min-h-[44px]">
+                  <div className="w-5 h-5 rounded bg-[var(--color-surface)]" />
+                  <div className="h-4 rounded bg-[var(--color-surface)] flex-1 max-w-[200px]" />
+                </div>
+              ))}
             </div>
           </div>
         )}
 
+        {/* 错误状态 */}
         {!loading && error && (
-          <div className="max-w-[640px] mx-auto px-4 pt-8 text-center text-[var(--color-muted)]">
+          <div className="max-w-[600px] mx-auto px-4 pt-16 text-center text-sm text-[var(--color-muted)]">
             加载失败，请检查服务是否运行
           </div>
         )}
 
+        {/* 内容渲染 */}
         {!loading && !error && info && (
           <>
             {info.type === 'directory' && (
@@ -88,7 +91,7 @@ export function App() {
               />
             )}
             {info.type === 'binary' && (
-              <div className="max-w-[640px] mx-auto px-4 pt-8 text-center text-[var(--color-muted)]">
+              <div className="max-w-[600px] mx-auto px-4 pt-16 text-center text-sm text-[var(--color-muted)]">
                 该文件类型不支持预览
               </div>
             )}

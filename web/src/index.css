@@ -1,6 +1,24 @@
 @import "tailwindcss";
 
-/* 自定义主题变量 */
+/* Geist Sans 可变字体 */
+@font-face {
+  font-family: 'Geist Sans';
+  src: url('/node_modules/geist/dist/fonts/geist-sans/Geist-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* Geist Mono 可变字体 */
+@font-face {
+  font-family: 'Geist Mono';
+  src: url('/node_modules/geist/dist/fonts/geist-mono/GeistMono-Variable.woff2') format('woff2');
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+/* 设计系统变量 - 暗色优先 */
 @theme {
   --color-bg: #09090b;
   --color-fg: #fafafa;
@@ -9,6 +27,7 @@
   --color-border: #27272a;
   --color-surface: #18181b;
   --color-accent: #22d3ee;
+  --color-accent-hover: #06b6d4;
   --color-accent-dim: rgba(34, 211, 238, .08);
 }
 
@@ -20,23 +39,60 @@ html {
 body {
   background: var(--color-bg);
   color: var(--color-fg);
-  font-family: -apple-system, BlinkMacSystemFont, 'Noto Sans SC', 'Inter', system-ui, sans-serif;
+  font-family: 'Geist Sans', -apple-system, BlinkMacSystemFont, 'Noto Sans SC', system-ui, sans-serif;
   -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
 /* 浅色模式覆盖 */
 html[data-theme="light"] {
   color-scheme: light;
-  --color-bg: #ffffff;
+  --color-bg: #fafafa;
   --color-fg: #18181b;
   --color-muted: #71717a;
   --color-dim: #a1a1aa;
   --color-border: #e4e4e7;
   --color-surface: #f4f4f5;
   --color-accent: #0891b2;
-  --color-accent-dim: rgba(8, 145, 178, .1);
+  --color-accent-hover: #0e7490;
+  --color-accent-dim: rgba(8, 145, 178, .08);
+}
+
+/* 系统偏好自动切换 */
+@media (prefers-color-scheme: light) {
+  html:not([data-theme]) {
+    color-scheme: light;
+    --color-bg: #fafafa;
+    --color-fg: #18181b;
+    --color-muted: #71717a;
+    --color-dim: #a1a1aa;
+    --color-border: #e4e4e7;
+    --color-surface: #f4f4f5;
+    --color-accent: #0891b2;
+    --color-accent-hover: #0e7490;
+    --color-accent-dim: rgba(8, 145, 178, .08);
+  }
 }
 
 ::selection {
   background: var(--color-accent-dim);
+}
+
+/* 滚动条 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--color-border);
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--color-dim);
 }

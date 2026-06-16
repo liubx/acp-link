@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
+import { ChatCircle, PaperPlaneRight, Paperclip, X } from '@phosphor-icons/react'
 
 interface Message {
   role: 'user' | 'bot'
@@ -66,7 +67,6 @@ export function Chat() {
       let fullText = ''
 
       if (reader) {
-        // 添加空 bot 消息
         setMessages(prev => [...prev, { role: 'bot', content: '' }])
 
         let buf = ''
@@ -94,7 +94,6 @@ export function Chat() {
           }
         }
 
-        // 确保最终状态
         if (fullText) {
           setMessages(prev => {
             const next = [...prev]
@@ -117,68 +116,64 @@ export function Chat() {
     }
   }
 
+  // FAB 按钮
   if (!open) {
     return (
       <button
         onClick={() => setOpen(true)}
         className="fixed bottom-5 right-4 sm:bottom-5 sm:right-5 z-50
-          w-12 h-12 sm:w-11 sm:h-11 rounded-xl
-          bg-[var(--color-accent)] text-[var(--color-bg)]
+          w-[44px] h-[44px] rounded-lg
+          bg-[var(--color-accent)] text-zinc-950
           flex items-center justify-center
           shadow-lg shadow-cyan-500/20
-          hover:-translate-y-0.5 hover:shadow-xl hover:shadow-cyan-500/30
-          active:scale-90 transition-all cursor-pointer"
+          hover:bg-[var(--color-accent-hover)] hover:shadow-xl hover:shadow-cyan-500/30
+          active:scale-[0.95] transition-all cursor-pointer"
         style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
         aria-label="打开 AI 助手"
       >
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-          <path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/>
-        </svg>
+        <ChatCircle size={22} weight="fill" />
       </button>
     )
   }
 
+  // 聊天面板
   return (
     <div className="fixed inset-0 sm:inset-auto sm:bottom-[74px] sm:right-5 z-50
-      w-full h-dvh sm:w-[360px] sm:h-[500px] lg:w-[380px] lg:h-[540px]
+      w-full h-dvh sm:w-[360px] sm:h-[500px]
       sm:max-h-[calc(100vh-100px)]
-      bg-[var(--color-bg)] sm:bg-[var(--color-bg)]
-      sm:border sm:border-[var(--color-border)] sm:rounded-xl
-      sm:shadow-2xl sm:animate-in sm:slide-in-from-bottom-2 sm:fade-in
+      bg-[var(--color-bg)]
+      sm:border sm:border-[var(--color-border)] sm:rounded-lg
+      sm:shadow-2xl
       flex flex-col overflow-hidden"
     >
-      {/* Header */}
+      {/* 头部 */}
       <div className="flex items-center justify-between px-4 py-3 border-b border-[var(--color-border)]"
         style={{ paddingTop: 'max(12px, env(safe-area-inset-top))' }}
       >
         <div className="flex items-center gap-2.5">
-          <div className="w-7 h-7 rounded-md bg-[var(--color-accent)] flex items-center justify-center text-[var(--color-bg)]">
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-              <path d="M12 2a4 4 0 014 4v2a4 4 0 01-8 0V6a4 4 0 014-4z"/><path d="M18 14a6 6 0 00-12 0v4h12v-4z"/>
-            </svg>
+          <div className="w-7 h-7 rounded-lg bg-[var(--color-accent)] flex items-center justify-center text-zinc-950">
+            <ChatCircle size={14} weight="fill" />
           </div>
           <span className="font-semibold text-sm">AI 助手</span>
         </div>
         <button
           onClick={() => setOpen(false)}
-          className="w-11 h-11 rounded-lg flex items-center justify-center text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)] active:scale-90 transition-all cursor-pointer"
+          className="w-[44px] h-[44px] rounded-lg flex items-center justify-center text-[var(--color-muted)] hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)] active:scale-[0.95] transition-all cursor-pointer"
           aria-label="关闭"
         >
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round">
-            <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
-          </svg>
+          <X size={18} weight="bold" />
         </button>
       </div>
 
-      {/* Messages */}
-      <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-2.5 scroll-smooth">
+      {/* 消息列表 */}
+      <div className="flex-1 overflow-y-auto px-3.5 py-3 space-y-2.5">
         {messages.map((msg, i) => (
           <div
             key={i}
-            className={`max-w-[85%] px-3.5 py-2.5 rounded-xl text-[13px] leading-relaxed whitespace-pre-wrap break-words
+            className={`max-w-[85%] px-3.5 py-2.5 rounded-lg text-[13px] leading-relaxed whitespace-pre-wrap break-words
               ${msg.role === 'user'
-                ? 'ml-auto bg-[var(--color-accent)] text-[var(--color-bg)] rounded-br-sm'
-                : 'mr-auto bg-[var(--color-surface)] border border-[var(--color-border)] rounded-bl-sm'
+                ? 'ml-auto bg-[var(--color-accent)] text-zinc-950'
+                : 'mr-auto bg-zinc-100 dark:bg-zinc-800 text-[var(--color-fg)]'
               }`}
           >
             {msg.content || (loading && i === messages.length - 1 ? '...' : '')}
@@ -187,11 +182,21 @@ export function Chat() {
         <div ref={messagesEnd} />
       </div>
 
-      {/* Input */}
+      {/* 输入区域 */}
       <div className="border-t border-[var(--color-border)] px-3 py-2.5 bg-[var(--color-surface)]"
         style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}
       >
         <div className="flex items-end gap-2">
+          {/* 附件按钮 */}
+          <button
+            className="w-[44px] h-[44px] sm:w-9 sm:h-9 rounded-lg border border-[var(--color-border)]
+              flex items-center justify-center flex-shrink-0
+              text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:border-[var(--color-accent)]
+              transition-colors cursor-pointer"
+            aria-label="附件"
+          >
+            <Paperclip size={16} />
+          </button>
           <textarea
             ref={inputRef}
             value={input}
@@ -201,25 +206,24 @@ export function Chat() {
             rows={1}
             className="flex-1 resize-none min-h-[40px] max-h-[120px] px-3 py-2.5
               bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg
-              text-[var(--color-fg)] text-sm sm:text-[13px] leading-snug
+              text-[var(--color-fg)] text-[16px] leading-snug
               placeholder:text-[var(--color-dim)]
               focus:outline-none focus:border-[var(--color-accent)] focus:ring-2 focus:ring-[var(--color-accent-dim)]
               transition-colors"
           />
+          {/* 发送按钮 */}
           <button
             onClick={send}
             disabled={!input.trim() || loading}
-            className="w-11 h-11 sm:w-9 sm:h-9 rounded-lg
-              bg-[var(--color-accent)] text-[var(--color-bg)]
+            className="w-[44px] h-[44px] sm:w-9 sm:h-9 rounded-lg
+              bg-[var(--color-accent)] text-zinc-950
               flex items-center justify-center flex-shrink-0
               disabled:opacity-30 disabled:cursor-not-allowed
-              hover:opacity-85 active:scale-90
+              hover:bg-[var(--color-accent-hover)] active:scale-[0.95]
               transition-all cursor-pointer"
             aria-label="发送"
           >
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-              <line x1="22" y1="2" x2="11" y2="13"/><polygon points="22 2 15 22 11 13 2 9 22 2"/>
-            </svg>
+            <PaperPlaneRight size={16} weight="bold" />
           </button>
         </div>
       </div>
