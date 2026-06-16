@@ -13,11 +13,35 @@ use axum::extract::{Request, State};
 use axum::http::StatusCode;
 use axum::response::{Html, IntoResponse, Response};
 use axum::routing::post;
-use tokio::sync::RwLock;
+use tokio::sync::{RwLock, broadcast};
 
 use crate::link::{AcpBridge, StreamEvent};
 use crate::chat::CHAT_WIDGET;
 use base64::Engine;
+
+/// web_send_file 事件：MCP tool 执行后推送给 SSE 流
+#[derive(Debug, Clone)]
+pub struct WebFileEvent {
+    /// 关联的 session（用于路由到正确的 SSE 流）
+    pub session: String,
+    /// 文件名
+    pub name: String,
+    /// 可访问的 URL 路径
+    pub url: String,
+    /// 是否为图片
+    pub is_image: bool,
+}
+
+/// 全局 file events 发送端，供 MCP tool 使用
+static WEB_FILE_TX: std::sync::OnceLock<broadcast::Sender<WebFileEvent>> = std::sync::OnceLock::new();
+
+/// 获取全局 file event sender
+pub fn web_file_sender() -> &'static broadcast::Sender<WebFileEvent> {
+    WEB_FILE_TX.get_or_init(|| {
+        let (tx, _) = broadcast::channel(64);
+        tx
+    })
+}
 
 /// API Server 共享状态
 struct ApiState {
@@ -485,6 +509,12 @@ async fn handle_ask(
         }
     }
 
+    // 注入 im_context，告知 agent 使用 web_send_file 发送文件
+    blocks.push(AcpBridge::text_block(&format!(
+        "[im_context: chat_id={}, send_file_tool=web_send_file, session={}]",
+        chat_id, chat_id
+    )));
+
     if !parsed.blocks.is_empty() {
         // 有序 blocks 模式（图文混排）
         let upload_dir = state.cwd.join(".uploads");
@@ -575,15 +605,44 @@ async fn handle_ask(
         }
     };
 
-    // SSE stream
+    // SSE stream — 同时监听 ACP 流和 web_send_file 事件
+    let mut file_rx = web_file_sender().subscribe();
+    let target_session = chat_id.clone();
     let stream = async_stream::stream! {
         let mut rx = rx;
-        while let Some(event) = rx.recv().await {
-            let data = match event {
-                StreamEvent::Text(t) => serde_json::json!({"type": "text", "content": t}),
-                StreamEvent::ToolCall(t) => serde_json::json!({"type": "tool", "content": t}),
-            };
-            yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", data));
+        loop {
+            tokio::select! {
+                biased;
+                event = rx.recv() => {
+                    match event {
+                        Some(StreamEvent::Text(t)) => {
+                            let data = serde_json::json!({"type": "text", "content": t});
+                            yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", data));
+                        }
+                        Some(StreamEvent::ToolCall(t)) => {
+                            let data = serde_json::json!({"type": "tool", "content": t});
+                            yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", data));
+                        }
+                        None => {
+                            // ACP 流结束
+                            break;
+                        }
+                    }
+                }
+                file_ev = file_rx.recv() => {
+                    if let Ok(ev) = file_ev {
+                        if ev.session == target_session {
+                            let data = serde_json::json!({
+                                "type": "file",
+                                "name": ev.name,
+                                "url": ev.url,
+                                "is_image": ev.is_image,
+                            });
+                            yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", data));
+                        }
+                    }
+                }
+            }
         }
         yield Ok(format!("data: {}\n\n", serde_json::json!({"type": "done"})));
     };

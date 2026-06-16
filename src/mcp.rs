@@ -21,6 +21,7 @@
 //! MCP Server 通过 `Arc<dyn IMChannel>` 调用 IM 平台能力，
 //! 与具体 IM 平台解耦。不同平台可注册不同的工具集。
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -161,11 +162,35 @@ fn handle_initialize(id: &Value, state: &McpState) -> Value {
 }
 
 fn handle_tools_list(id: &Value, state: &McpState) -> Value {
+    let mut tools = state.channel.mcp_tool_list();
+    // 添加 web_send_file 工具（Web chat 场景下 agent 用它发送文件/图片）
+    tools.push(json!({
+        "name": "web_send_file",
+        "description": "Send a file or image to the current web chat session. Use this when the send_file_tool in [im_context] is 'web_send_file'. The file will be served via HTTP and shown inline (images) or as a download link in the web chat. Extract the session from the request context.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "file_path": {
+                    "type": "string",
+                    "description": "Absolute path to the file to send"
+                },
+                "session": {
+                    "type": "string",
+                    "description": "The web chat session ID (from im_context chat_id)"
+                },
+                "file_name": {
+                    "type": "string",
+                    "description": "Optional display name. Defaults to basename of file_path"
+                }
+            },
+            "required": ["file_path", "session"]
+        }
+    }));
     json!({
         "jsonrpc": "2.0",
         "id": id,
         "result": {
-            "tools": state.channel.mcp_tool_list()
+            "tools": tools
         }
     })
 }
@@ -176,6 +201,27 @@ async fn handle_tools_call(id: &Value, params: &Value, state: &McpState) -> Valu
         .get("arguments")
         .cloned()
         .unwrap_or_else(|| json!({}));
+
+    // web_send_file 由 MCP server 直接处理（不走 IMChannel）
+    if tool_name == "web_send_file" {
+        return match handle_web_send_file(&args).await {
+            Ok(data) => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "content": [{ "type": "text", "text": data.to_string() }]
+                }
+            }),
+            Err(msg) => json!({
+                "jsonrpc": "2.0",
+                "id": id,
+                "result": {
+                    "content": [{ "type": "text", "text": msg }],
+                    "isError": true
+                }
+            }),
+        };
+    }
 
     match state.channel.mcp_tool_call(tool_name, &args).await {
         Ok(data) => json!({
@@ -194,6 +240,69 @@ async fn handle_tools_call(id: &Value, params: &Value, state: &McpState) -> Valu
             }
         }),
     }
+}
+
+/// 处理 web_send_file MCP tool：复制文件到 .uploads/ 并通过 broadcast 通知 SSE 流
+async fn handle_web_send_file(args: &Value) -> Result<Value, String> {
+    let file_path = args.get("file_path").and_then(|v| v.as_str()).unwrap_or("");
+    let session = args.get("session").and_then(|v| v.as_str()).unwrap_or("");
+    let file_name = args
+        .get("file_name")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+        .unwrap_or_else(|| {
+            std::path::Path::new(file_path)
+                .file_name()
+                .and_then(|n| n.to_str())
+                .unwrap_or("file")
+                .to_string()
+        });
+
+    if file_path.is_empty() || session.is_empty() {
+        return Err("file_path and session are required".into());
+    }
+
+    // 读取源文件
+    let data = std::fs::read(file_path).map_err(|e| format!("读取文件失败: {e}"))?;
+
+    // 保存到 cwd/.uploads/（使用时间戳避免冲突）
+    let cwd = std::env::current_dir().unwrap_or_else(|_| PathBuf::from("."));
+    let upload_dir = cwd.join(".uploads");
+    let _ = std::fs::create_dir_all(&upload_dir);
+
+    let safe_name = file_name.replace('/', "_").replace('\\', "_");
+    let ts = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let final_name = format!("{ts}-{safe_name}");
+    let dest = upload_dir.join(&final_name);
+
+    std::fs::write(&dest, &data).map_err(|e| format!("写入文件失败: {e}"))?;
+
+    // 判断是否为图片
+    let lower = safe_name.to_lowercase();
+    let is_image = lower.ends_with(".png")
+        || lower.ends_with(".jpg")
+        || lower.ends_with(".jpeg")
+        || lower.ends_with(".gif")
+        || lower.ends_with(".webp")
+        || lower.ends_with(".bmp");
+
+    // 构建 URL（相对路径，前端通过静态文件服务访问）
+    let url = format!("/.uploads/{}", urlencoding::encode(&final_name));
+
+    // 通过 broadcast 通知活跃的 SSE 流
+    let event = crate::api::WebFileEvent {
+        session: session.to_string(),
+        name: safe_name.clone(),
+        url: url.clone(),
+        is_image,
+    };
+    let _ = crate::api::web_file_sender().send(event);
+
+    tracing::info!("web_send_file: session={session}, name={safe_name}, url={url}, is_image={is_image}");
+    Ok(json!({ "status": "sent", "name": safe_name, "url": url, "is_image": is_image }))
 }
 
 // ── helpers ─────────────────────────────────────────────────────

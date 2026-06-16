@@ -212,6 +212,14 @@ window.copyCode=function(id){
           } else if(ev.type==='tool'){
             if(phase==='thinking')phase='streaming';
             toolHint=ev.content||'';
+          } else if(ev.type==='file'){
+            phase='streaming';
+            toolHint='';
+            if(ev.is_image){
+              fullText+='\n!['+ev.name+']('+ev.url+')\n';
+            } else {
+              fullText+='\n[\u{1f4ce} '+ev.name+']('+ev.url+')\n';
+            }
           } else if(ev.type==='done'){
             phase='done';
             toolHint='';
@@ -365,6 +373,8 @@ window.copyCode=function(id){
     s=s.replace(/(?<!\*)\*([^*]+)\*(?!\*)/g,'<em>$1</em>');
     // 删除线
     s=s.replace(/~~(.+?)~~/g,'<del>$1</del>');
+    // 图片
+    s=s.replace(/!\[([^\]]*)\]\(([^)]+)\)/g,'<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:4px 0;display:block">');
     // 链接
     s=s.replace(/\[([^\]]+)\]\(([^)]+)\)/g,'<a href="$2" target="_blank" style="color:var(--link,#93c5fd)">$1</a>');
     return s;
