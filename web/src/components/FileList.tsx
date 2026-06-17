@@ -116,7 +116,7 @@ export function FileList({ entries, currentPath, onNavigate }: Props) {
   }, [])
 
   return (
-    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
+    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
       <div className="divide-y divide-[var(--color-border)]">
         {sorted.map(entry => (
           <button
