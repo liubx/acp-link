@@ -130,6 +130,19 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
+// 用户消息渲染：只处理图片和文件链接，文本保持原样
+function renderUserMessage(text: string): string {
+  if (!text) return ''
+  let html = escapeHtml(text)
+  // 图片 ![name](url) → <img>
+  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:4px 0;display:block" />')
+  // 文件链接 [📎 name](url) → 链接
+  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:inherit;text-decoration:underline">$1</a>')
+  // 换行
+  html = html.replace(/\n/g, '<br/>')
+  return html
+}
+
 // --- 类型定义 ---
 
 interface Attachment {
@@ -549,7 +562,7 @@ export function ChatFab() {
                           ? <span className="thinking-dots">思考中</span>
                           : '')
                     ) : (
-                      msg.content || ''
+                      <div dangerouslySetInnerHTML={{ __html: renderUserMessage(msg.content) }} />
                     )}
                   </div>
                   {msg.role === 'bot' && loading && i === messages.length - 1 && toolHint && (
