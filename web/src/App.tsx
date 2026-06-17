@@ -128,17 +128,11 @@ export function App() {
     navigate(parts.join('/'), 'back')
   }, [currentPath, navigate])
 
-  // 动画变体
+  // 动画变体 - 纯 opacity，不移动位置，避免布局抖动
   const variants = {
-    enter: (dir: Direction) => ({
-      x: reducedMotion ? 0 : dir === 'forward' ? 80 : -80,
-      opacity: 0,
-    }),
-    center: { x: 0, opacity: 1 },
-    exit: (dir: Direction) => ({
-      x: reducedMotion ? 0 : dir === 'forward' ? -80 : 80,
-      opacity: 0,
-    }),
+    enter: { opacity: 0 },
+    center: { opacity: 1 },
+    exit: { opacity: 0 },
   }
 
   // 判断当前是目录还是文件
@@ -173,15 +167,14 @@ export function App() {
 
       {/* 主内容区 */}
       <main className="flex-1 relative">
-        <AnimatePresence mode="wait" custom={direction}>
+        <AnimatePresence mode="wait">
           <motion.div
             key={currentPath + (isFile ? '-file' : '-dir')}
-            custom={direction}
             variants={variants}
             initial="enter"
             animate="center"
             exit="exit"
-            transition={{ duration: reducedMotion ? 0 : 0.2, ease: 'easeOut' }}
+            transition={{ duration: reducedMotion ? 0 : 0.15 }}
             className="w-full"
           >
             {loading ? (
