@@ -128,6 +128,11 @@ fn serve_spa_file(path: &str) -> Option<Response> {
         );
     }
 
+    // .tmp/ 开头的路径是上传/下载的文件，交给 serve_notes_file 处理
+    if relative.starts_with(".tmp/") {
+        return None;
+    }
+
     // 所有其他路径都返回 SPA index.html（React Router 处理客户端路由）
     // API 路径 (/api/*) 已经被 axum Router 优先匹配了，不会到这里
     let index = WEB_DIST.get_file("index.html")?;
