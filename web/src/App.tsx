@@ -93,6 +93,7 @@ export function App() {
   useEffect(() => {
     const handlePop = () => {
       const path = decodeURIComponent(window.location.pathname.replace(/^\//, ''))
+      setNavDirection('back')
       setCurrentPath(path)
     }
     window.addEventListener('popstate', handlePop)
@@ -112,7 +113,9 @@ export function App() {
   }, [])
 
   // 导航函数
-  const navigate = useCallback((path: string, _dir: 'forward' | 'back' = 'forward') => {
+  const [navDirection, setNavDirection] = useState<'forward' | 'back'>('forward')
+  const navigate = useCallback((path: string, dir: 'forward' | 'back' = 'forward') => {
+    setNavDirection(dir)
     setCurrentPath(path)
   }, [])
 
@@ -123,9 +126,21 @@ export function App() {
     navigate(parts.join('/'), 'back')
   }, [currentPath, navigate])
 
-  // 动画方向（保留用于面包屑导航方向判断）
+  // 动画方向
   const isDirectory = fileInfo?.type === 'directory'
   const isFile = fileInfo && fileInfo.type !== 'directory'
+
+  const slideVariants = {
+    enter: (dir: string) => ({
+      x: reducedMotion ? 0 : dir === 'forward' ? 60 : -60,
+      opacity: 0,
+    }),
+    center: { x: 0, opacity: 1 },
+    exit: (dir: string) => ({
+      x: reducedMotion ? 0 : dir === 'forward' ? -60 : 60,
+      opacity: 0,
+    }),
+  }
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -153,15 +168,17 @@ export function App() {
         </div>
       </header>
 
-      {/* 主内容区 */}
-      <main className="flex-1 relative overflow-x-hidden">
-        <AnimatePresence mode="wait">
+      {/* 主内容区 - overflow-clip 防止 x 动画撑宽页面 */}
+      <main className="flex-1 relative" style={{ overflowX: 'clip' }}>
+        <AnimatePresence mode="wait" custom={navDirection}>
           <motion.div
             key={currentPath + (isFile ? '-file' : '-dir')}
-            initial={{ opacity: reducedMotion ? 1 : 0, y: reducedMotion ? 0 : 8 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: reducedMotion ? 0 : 0.15, ease: 'easeOut' }}
+            custom={navDirection}
+            variants={slideVariants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.4, 0, 0.2, 1] }}
             className="w-full"
           >
             {loading ? (
