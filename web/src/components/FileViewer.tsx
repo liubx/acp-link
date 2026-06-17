@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
 import { CaretLeft } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
@@ -104,10 +105,29 @@ function addLineNumbers(content: string): string {
   }).join('\n')
 }
 
-// 复制按钮组件
+// 复制按钮组件（兼容 HTTP 非安全上下文）
 function CopyButton({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+
   const handleCopy = () => {
-    navigator.clipboard.writeText(text)
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+    } else {
+      // fallback for HTTP
+      const ta = document.createElement('textarea')
+      ta.value = text
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }
   }
 
   return (
@@ -115,7 +135,7 @@ function CopyButton({ text }: { text: string }) {
       onClick={handleCopy}
       className="text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)] px-2 py-1 rounded hover:bg-[var(--color-border)] transition-colors cursor-pointer"
     >
-      复制
+      {copied ? '已复制' : '复制'}
     </button>
   )
 }

@@ -25,7 +25,10 @@ export interface FileInfo {
 }
 
 export function App() {
-  const [currentPath, setCurrentPath] = useState('')
+  const [currentPath, setCurrentPath] = useState(() => {
+    if (typeof window === 'undefined') return ''
+    return decodeURIComponent(window.location.pathname.replace(/^\//, ''))
+  })
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [loading, setLoading] = useState(true)
   const [searchOpen, setSearchOpen] = useState(false)
@@ -48,12 +51,6 @@ export function App() {
       return 'auto'
     })
   }
-
-  // 从 URL 初始化路径
-  useEffect(() => {
-    const path = decodeURIComponent(window.location.pathname.replace(/^\//, ''))
-    setCurrentPath(path)
-  }, [])
 
   // 获取文件/目录信息
   useEffect(() => {
