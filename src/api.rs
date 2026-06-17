@@ -634,7 +634,7 @@ async fn handle_upload(
     }
 
     let path_str = format!(".tmp/uploads/{final_name}");
-    let abs_path_str = file_path.to_string_lossy().to_string();
+    let _abs_path_str = file_path.to_string_lossy().to_string();
     let is_image = safe_name.to_lowercase().ends_with(".png")
         || safe_name.to_lowercase().ends_with(".jpg")
         || safe_name.to_lowercase().ends_with(".jpeg")
