@@ -24,13 +24,10 @@ export interface FileInfo {
   size?: string
 }
 
-type Direction = 'forward' | 'back'
-
 export function App() {
   const [currentPath, setCurrentPath] = useState('')
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const [direction, setDirection] = useState<Direction>('forward')
   const [searchOpen, setSearchOpen] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light' | 'auto'>(() => {
     if (typeof window === 'undefined') return 'auto'
@@ -96,7 +93,6 @@ export function App() {
   useEffect(() => {
     const handlePop = () => {
       const path = decodeURIComponent(window.location.pathname.replace(/^\//, ''))
-      setDirection('back')
       setCurrentPath(path)
     }
     window.addEventListener('popstate', handlePop)
@@ -116,8 +112,7 @@ export function App() {
   }, [])
 
   // 导航函数
-  const navigate = useCallback((path: string, dir: Direction = 'forward') => {
-    setDirection(dir)
+  const navigate = useCallback((path: string, _dir: 'forward' | 'back' = 'forward') => {
     setCurrentPath(path)
   }, [])
 
