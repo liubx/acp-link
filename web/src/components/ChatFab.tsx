@@ -113,7 +113,14 @@ function renderMarkdown(text: string): string {
   if (inBlockquote) result.push('</blockquote>')
 
   processed = result.join('\n')
-  processed = processed.replace(/\n/g, '<br/>')
+
+  // 处理换行：连续空行合并为一个段落间隔，单个换行为 <br>
+  processed = processed
+    .replace(/\n{3,}/g, '\n\n')           // 3个以上换行合并为2个
+    .replace(/\n\n/g, '</p><p>')          // 双换行 = 段落分隔
+    .replace(/\n/g, '<br/>')              // 单换行 = 行内换行
+  processed = `<p>${processed}</p>`
+  processed = processed.replace(/<p><\/p>/g, '') // 清理空段落
 
   codeBlocks.forEach((block, i) => {
     processed = processed.replace(`\x00CODEBLOCK_${i}\x00`, block)

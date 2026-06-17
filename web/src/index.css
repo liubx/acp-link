@@ -109,6 +109,18 @@ html[data-theme="light"] {
   font-style: italic;
 }
 
+.chat-markdown p {
+  margin: 0.3em 0;
+}
+
+.chat-markdown p:first-child {
+  margin-top: 0;
+}
+
+.chat-markdown p:last-child {
+  margin-bottom: 0;
+}
+
 .chat-markdown .inline-code {
   font-family: 'Geist Mono', monospace;
   font-size: 0.85em;
@@ -187,7 +199,7 @@ html[data-theme="light"] {
 
 .chat-markdown .chat-list {
   padding-left: 1.2em;
-  margin: 4px 0;
+  margin: 2px 0;
 }
 
 .chat-markdown ul.chat-list {
@@ -199,7 +211,7 @@ html[data-theme="light"] {
 }
 
 .chat-markdown .chat-list li {
-  margin: 2px 0;
+  margin: 1px 0;
 }
 
 .chat-markdown .chat-table {
