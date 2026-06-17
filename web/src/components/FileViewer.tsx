@@ -64,7 +64,33 @@ export function FileViewer({ fileInfo, onBack }: Props) {
         </div>
       ) : isMarkdown && fileInfo.content ? (
         <article className="markdown-body">
-          <ReactMarkdown remarkPlugins={[remarkGfm]}>
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            components={{
+              code({ className, children, ...props }) {
+                const match = /language-(\w+)/.exec(className || '')
+                const isBlock = String(children).includes('\n') || match
+                if (isBlock) {
+                  const lang = match ? match[1] : ''
+                  const codeText = String(children).replace(/\n$/, '')
+                  return (
+                    <div className="not-prose border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)] my-4">
+                      <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
+                        <span className="text-[10px] text-[var(--color-dim)] font-mono uppercase">{lang || 'code'}</span>
+                        <CopyButton text={codeText} />
+                      </div>
+                      <div className="overflow-x-auto">
+                        <pre className="px-4 py-3 text-[13px] leading-relaxed font-mono text-[var(--color-fg)] !bg-transparent !border-0 !m-0 !rounded-none">
+                          <code {...props}>{children}</code>
+                        </pre>
+                      </div>
+                    </div>
+                  )
+                }
+                return <code className={className} {...props}>{children}</code>
+              }
+            }}
+          >
             {fileInfo.content}
           </ReactMarkdown>
         </article>
