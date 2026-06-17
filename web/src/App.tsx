@@ -6,23 +6,21 @@ import { FileViewer } from './components/FileViewer'
 import { ChatFab } from './components/ChatFab'
 import { Breadcrumb } from './components/Breadcrumb'
 
-// API 响应类型
+// API 响应类型（匹配后端实际返回格式）
 export interface FileEntry {
   name: string
-  path: string
   is_dir: boolean
-  size?: number
-  modified?: string
+  ext: string
 }
 
 export interface FileInfo {
-  name: string
+  type: 'directory' | 'markdown' | 'code' | 'binary'
   path: string
-  is_dir: boolean
-  content?: string
-  is_binary?: boolean
-  size?: number
   entries?: FileEntry[]
+  content?: string
+  ext?: string
+  line_count?: number
+  size?: string
 }
 
 type Direction = 'forward' | 'back'
@@ -121,8 +119,8 @@ export function App() {
   }
 
   // 判断当前是目录还是文件
-  const isDirectory = fileInfo?.is_dir ?? true
-  const isFile = fileInfo && !fileInfo.is_dir
+  const isDirectory = fileInfo?.type === 'directory'
+  const isFile = fileInfo && fileInfo.type !== 'directory'
 
   return (
     <div className="min-h-screen flex flex-col">
@@ -183,9 +181,10 @@ export function App() {
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
         entries={fileInfo?.entries ?? []}
-        onNavigate={(path) => {
+        onNavigate={(name) => {
           setSearchOpen(false)
-          navigate(path, 'forward')
+          const fullPath = currentPath ? `${currentPath}/${name}` : name
+          navigate(fullPath, 'forward')
         }}
       />
 

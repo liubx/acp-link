@@ -48,7 +48,7 @@ export function SearchModal({ open, onClose, entries, onNavigate }: Props) {
       e.preventDefault()
       setSelectedIndex(i => Math.max(i - 1, 0))
     } else if (e.key === 'Enter' && results[selectedIndex]) {
-      onNavigate(results[selectedIndex].path)
+      onNavigate(results[selectedIndex].name)
     }
   }
 
@@ -98,8 +98,8 @@ export function SearchModal({ open, onClose, entries, onNavigate }: Props) {
               ) : (
                 results.slice(0, 20).map((entry, i) => (
                   <button
-                    key={entry.path}
-                    onClick={() => onNavigate(entry.path)}
+                    key={entry.name}
+                    onClick={() => onNavigate(entry.name)}
                     onMouseEnter={() => setSelectedIndex(i)}
                     className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors ${
                       i === selectedIndex

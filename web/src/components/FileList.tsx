@@ -58,7 +58,7 @@ interface Props {
   onNavigate: (path: string, direction: 'forward' | 'back') => void
 }
 
-export function FileList({ entries, onNavigate }: Props) {
+export function FileList({ entries, currentPath, onNavigate }: Props) {
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<string | null>(null)
   const [previewPos, setPreviewPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -67,6 +67,11 @@ export function FileList({ entries, onNavigate }: Props) {
 
   // 是否为触摸设备
   const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window
+
+  // 构造完整路径
+  const getEntryPath = (name: string) => {
+    return currentPath ? `${currentPath}/${name}` : name
+  }
 
   // 排序: 目录在前，然后按名字排序
   const sorted = [...entries].sort((a, b) => {
@@ -84,13 +89,14 @@ export function FileList({ entries, onNavigate }: Props) {
 
     hoverTimer.current = setTimeout(async () => {
       try {
-        const res = await fetch(`/api/files/${encodeURIComponent(entry.path)}`)
+        const entryPath = getEntryPath(entry.name)
+        const res = await fetch(`/api/files/${encodeURIComponent(entryPath)}`)
         if (res.ok) {
           const data = await res.json()
           if (data.content) {
             const lines = data.content.split('\n').slice(0, 3).join('\n')
             setPreviewContent(lines)
-            setPreviewPath(entry.path)
+            setPreviewPath(entryPath)
           }
         }
       } catch {
@@ -114,8 +120,8 @@ export function FileList({ entries, onNavigate }: Props) {
       <div className="divide-y divide-[var(--color-border)]">
         {sorted.map(entry => (
           <button
-            key={entry.path}
-            onClick={() => onNavigate(entry.path, 'forward')}
+            key={entry.name}
+            onClick={() => onNavigate(getEntryPath(entry.name), 'forward')}
             onMouseEnter={(e) => handleMouseEnter(entry, e)}
             onMouseLeave={handleMouseLeave}
             className="w-full flex items-center gap-3 px-3 py-3 sm:py-2.5 text-left hover:bg-[var(--color-surface)] rounded-lg transition-colors cursor-pointer group min-h-[44px]"

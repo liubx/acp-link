@@ -4,14 +4,6 @@ import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
 
-// 代码文件扩展名
-const CODE_EXTENSIONS = new Set([
-  'rs', 'py', 'js', 'ts', 'tsx', 'jsx', 'go', 'java', 'c', 'cpp',
-  'h', 'hpp', 'rb', 'php', 'swift', 'kt', 'lua', 'sh', 'bash',
-  'sql', 'graphql', 'css', 'scss', 'html', 'xml', 'json', 'yaml',
-  'yml', 'toml', 'ini', 'conf', 'dockerfile', 'makefile',
-])
-
 function getExtension(name: string): string {
   const lower = name.toLowerCase()
   if (lower === 'makefile' || lower === 'dockerfile') return lower
@@ -35,10 +27,12 @@ export function FileViewer({ fileInfo, onBack }: Props) {
     )
   }
 
-  const ext = getExtension(fileInfo.name)
-  const isMarkdown = ext === 'md'
-  const isCode = CODE_EXTENSIONS.has(ext)
-  const isBinary = fileInfo.is_binary
+  // 从路径中提取文件名
+  const fileName = fileInfo.path.split('/').pop() || fileInfo.path
+  const ext = fileInfo.ext || getExtension(fileName)
+  const isMarkdown = fileInfo.type === 'markdown'
+  const isCode = fileInfo.type === 'code'
+  const isBinary = fileInfo.type === 'binary'
 
   return (
     <motion.div
@@ -58,14 +52,14 @@ export function FileViewer({ fileInfo, onBack }: Props) {
 
       {/* 文件名 */}
       <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)] mb-4">
-        {fileInfo.name}
+        {fileName}
       </h1>
 
       {/* 内容区 */}
       {isBinary ? (
         <div className="py-12 text-center text-[var(--color-dim)] border border-[var(--color-border)] rounded-lg bg-[var(--color-surface)]">
           <p className="text-sm">无法预览二进制文件</p>
-          <p className="text-xs mt-1">大小: {formatSize(fileInfo.size ?? 0)}</p>
+          {fileInfo.size && <p className="text-xs mt-1">大小: {fileInfo.size}</p>}
         </div>
       ) : isMarkdown && fileInfo.content ? (
         <article className="prose prose-invert max-w-none prose-sm prose-headings:text-[var(--color-fg)] prose-p:text-[var(--color-fg)] prose-a:text-[var(--color-accent)] prose-code:text-[var(--color-accent)] prose-pre:bg-[var(--color-surface)] prose-pre:border prose-pre:border-[var(--color-border)]">
@@ -108,13 +102,6 @@ function addLineNumbers(content: string): string {
     const num = String(i + 1).padStart(pad, ' ')
     return `${num}  ${line}`
   }).join('\n')
-}
-
-// 格式化文件大小
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
 }
 
 // 复制按钮组件
