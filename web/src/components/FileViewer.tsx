@@ -62,7 +62,7 @@ export function FileViewer({ fileInfo, onBack }: Props) {
           {fileInfo.size && <p className="text-xs mt-1">大小: {fileInfo.size}</p>}
         </div>
       ) : isMarkdown && fileInfo.content ? (
-        <article className="prose prose-invert max-w-none prose-sm prose-headings:text-[var(--color-fg)] prose-p:text-[var(--color-fg)] prose-a:text-[var(--color-accent)] prose-code:text-[var(--color-accent)] prose-pre:bg-[var(--color-surface)] prose-pre:border prose-pre:border-[var(--color-border)]">
+        <article className="markdown-body">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>
             {fileInfo.content}
           </ReactMarkdown>
