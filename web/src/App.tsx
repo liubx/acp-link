@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Sun, Moon } from '@phosphor-icons/react'
+import { Sun, Moon, CircleHalf } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
 import { FileList } from './components/FileList'
 import { FileViewer } from './components/FileViewer'
@@ -32,24 +32,25 @@ export function App() {
   const [loading, setLoading] = useState(true)
   const [direction, setDirection] = useState<Direction>('forward')
   const [searchOpen, setSearchOpen] = useState(false)
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    if (typeof window === 'undefined') return 'dark'
-    const stored = localStorage.getItem('theme')
-    if (stored === 'light') return 'light'
-    if (stored === 'dark') return 'dark'
-    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  const [theme, setTheme] = useState<'dark' | 'light' | 'auto'>(() => {
+    if (typeof window === 'undefined') return 'auto'
+    return (localStorage.getItem('theme') as 'dark' | 'light' | 'auto') || 'auto'
   })
   const reducedMotion = useReducedMotion()
 
-  // 主题切换
+  // 主题应用
   useEffect(() => {
-    if (theme === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light')
-    } else {
-      document.documentElement.removeAttribute('data-theme')
-    }
+    document.documentElement.setAttribute('data-theme', theme)
     localStorage.setItem('theme', theme)
   }, [theme])
+
+  const toggleTheme = () => {
+    setTheme(t => {
+      if (t === 'auto') return 'light'
+      if (t === 'light') return 'dark'
+      return 'auto'
+    })
+  }
 
   // 从 URL 初始化路径
   useEffect(() => {
@@ -152,11 +153,12 @@ export function App() {
           <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
           <div className="flex items-center gap-1.5">
             <button
-              onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+              onClick={toggleTheme}
               className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
               aria-label="切换主题"
+              title={theme === 'dark' ? '暗色' : theme === 'light' ? '亮色' : '跟随系统'}
             >
-              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+              {theme === 'dark' ? <Moon size={16} /> : theme === 'light' ? <Sun size={16} /> : <CircleHalf size={16} />}
             </button>
             <button
               onClick={() => setSearchOpen(true)}
