@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { ChatCircle, PaperPlaneRight, X, Paperclip, Check } from '@phosphor-icons/react'
+import { ChatCircle, PaperPlaneRight, X, Paperclip } from '@phosphor-icons/react'
 
 // --- Markdown 渲染 ---
 
@@ -168,7 +168,6 @@ export function ChatFab() {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const [loading, setLoading] = useState(false)
-  const [copiedIdx, setCopiedIdx] = useState<number | null>(null)
   const [toolHint, setToolHint] = useState('')
   const [dragging, setDragging] = useState(false)
   const messagesEnd = useRef<HTMLDivElement>(null)
@@ -630,12 +629,6 @@ export function ChatFab() {
               </div>
             </div>
 
-            {/* 复制成功提示 */}
-            {copiedIdx !== null && (
-              <div className="absolute top-14 right-4 z-50 flex items-center gap-1 bg-green-600 text-white text-xs px-3 py-1.5 rounded-md shadow-lg">
-                <Check size={12} weight="bold" /> 已复制
-              </div>
-            )}
           </motion.div>
         )}
       </AnimatePresence>
