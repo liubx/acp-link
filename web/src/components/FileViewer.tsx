@@ -20,6 +20,7 @@ interface Props {
 
 export function FileViewer({ fileInfo, onBack, onRefresh }: Props) {
   const reducedMotion = useReducedMotion()
+  const [refreshing, setRefreshing] = useState(false)
 
   if (!fileInfo) {
     return (
@@ -55,12 +56,16 @@ export function FileViewer({ fileInfo, onBack, onRefresh }: Props) {
         <div className="flex items-center gap-1">
           {onRefresh && (
             <button
-              onClick={onRefresh}
+              onClick={() => {
+                setRefreshing(true)
+                onRefresh()
+                setTimeout(() => setRefreshing(false), 600)
+              }}
               className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
               aria-label="刷新"
               title="刷新"
             >
-              <ArrowClockwise size={15} />
+              <ArrowClockwise size={15} className={refreshing ? 'animate-spin' : ''} />
             </button>
           )}
           <button
