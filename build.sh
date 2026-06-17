@@ -7,11 +7,14 @@ cd web && npm run build && cd ..
 echo "🦀 构建 Rust (release)..."
 cargo build --release
 
-echo "📋 安装到 /usr/local/bin..."
-sudo cp target/release/acp-link /usr/local/bin/acp-link
-sudo codesign --force -s - /usr/local/bin/acp-link
+echo "🔏 签名..."
+codesign --force -s - target/release/acp-link
 
-echo "🔄 重启服务..."
+echo "🔄 停止旧进程..."
 pkill -9 -x acp-link || true
+sleep 1
+
+echo "📋 安装..."
+cp target/release/acp-link /usr/local/bin/acp-link
 
 echo "✅ 完成"

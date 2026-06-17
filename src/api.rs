@@ -633,7 +633,8 @@ async fn handle_upload(
         return (StatusCode::INTERNAL_SERVER_ERROR, format!("写入失败: {e}")).into_response();
     }
 
-    let path_str = file_path.to_string_lossy().to_string();
+    let path_str = format!(".tmp/uploads/{final_name}");
+    let abs_path_str = file_path.to_string_lossy().to_string();
     let is_image = safe_name.to_lowercase().ends_with(".png")
         || safe_name.to_lowercase().ends_with(".jpg")
         || safe_name.to_lowercase().ends_with(".jpeg")
