@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { CaretLeft } from '@phosphor-icons/react'
+import { CaretLeft, Copy, Check } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
@@ -133,9 +133,10 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)] px-2 py-1 rounded hover:bg-[var(--color-border)] transition-colors cursor-pointer"
+      className="text-[var(--color-muted)] hover:text-[var(--color-fg)] p-1.5 rounded hover:bg-[var(--color-border)] transition-colors cursor-pointer"
+      aria-label="复制"
     >
-      {copied ? '已复制' : '复制'}
+      {copied ? <Check size={14} weight="bold" className="text-green-500" /> : <Copy size={14} />}
     </button>
   )
 }
