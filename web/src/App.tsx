@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Sun, Moon, CircleHalf } from '@phosphor-icons/react'
+import { Sun, Moon, CircleHalf, ArrowClockwise, DownloadSimple } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
 import { FileList } from './components/FileList'
 import { FileViewer } from './components/FileViewer'
@@ -121,13 +121,6 @@ export function App() {
     setCurrentPath(path)
   }, [])
 
-  // 返回上级目录
-  const goBack = useCallback(() => {
-    const parts = currentPath.split('/').filter(Boolean)
-    parts.pop()
-    navigate(parts.join('/'), 'back')
-  }, [currentPath, navigate])
-
   // 动画方向
   const isDirectory = fileInfo?.type === 'directory'
   const isFile = fileInfo && fileInfo.type !== 'directory'
@@ -144,10 +137,24 @@ export function App() {
     }),
   }
 
+  const [showProgress, setShowProgress] = useState(false)
+  const progressTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // 进度条最短显示 400ms
+  useEffect(() => {
+    if (loading) {
+      setShowProgress(true)
+      if (progressTimer.current) clearTimeout(progressTimer.current)
+    } else {
+      progressTimer.current = setTimeout(() => setShowProgress(false), 400)
+    }
+    return () => { if (progressTimer.current) clearTimeout(progressTimer.current) }
+  }, [loading])
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* 顶部进度条 */}
-      {loading && (
+      {showProgress && (
         <div className="fixed top-0 left-0 right-0 z-50 h-[2px] bg-[var(--color-border)] overflow-hidden">
           <div className="h-full bg-[var(--color-accent)] animate-progress" />
         </div>
@@ -158,6 +165,36 @@ export function App() {
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
           <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
           <div className="flex items-center gap-1.5">
+            {isFile && fileInfo && (
+              <button
+                onClick={() => {
+                  const fileName = fileInfo.path.split('/').pop() || 'file'
+                  const a = document.createElement('a')
+                  if (fileInfo.content) {
+                    const blob = new Blob([fileInfo.content], { type: 'text/plain' })
+                    a.href = URL.createObjectURL(blob)
+                  } else {
+                    const encodedPath = fileInfo.path.split('/').map(s => encodeURIComponent(s)).join('/')
+                    a.href = `/api/files/${encodedPath}?download=1`
+                  }
+                  a.download = fileName
+                  a.click()
+                }}
+                className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+                aria-label="下载"
+                title="下载"
+              >
+                <DownloadSimple size={15} />
+              </button>
+            )}
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+              aria-label="刷新"
+              title="刷新"
+            >
+              <ArrowClockwise size={15} />
+            </button>
             <button
               onClick={toggleTheme}
               className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
@@ -199,7 +236,7 @@ export function App() {
                 </div>
               </div>
             ) : isFile ? (
-              <FileViewer fileInfo={fileInfo} onBack={goBack} onRefresh={() => setRefreshKey(k => k + 1)} />
+              <FileViewer fileInfo={fileInfo} />
             ) : isDirectory && fileInfo?.entries ? (
               <FileList
                 entries={fileInfo.entries}

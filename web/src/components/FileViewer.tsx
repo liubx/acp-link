@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { CaretLeft, Copy, Check, ArrowClockwise, DownloadSimple } from '@phosphor-icons/react'
+import { Copy, Check } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
@@ -14,13 +14,10 @@ function getExtension(name: string): string {
 
 interface Props {
   fileInfo: FileInfo | null
-  onBack: () => void
-  onRefresh?: () => void
 }
 
-export function FileViewer({ fileInfo, onBack, onRefresh }: Props) {
+export function FileViewer({ fileInfo }: Props) {
   const reducedMotion = useReducedMotion()
-  const [refreshing, setRefreshing] = useState(false)
 
   if (!fileInfo) {
     return (
@@ -44,53 +41,6 @@ export function FileViewer({ fileInfo, onBack, onRefresh }: Props) {
       transition={{ duration: reducedMotion ? 0 : 0.2 }}
       className="max-w-3xl mx-auto px-4 sm:px-6 py-4"
     >
-      {/* 文件工具栏 */}
-      <div className="flex items-center justify-between mb-4">
-        <button
-          onClick={onBack}
-          className="flex items-center gap-1.5 text-sm text-[var(--color-muted)] hover:text-[var(--color-fg)] transition-colors cursor-pointer min-h-[44px] sm:min-h-0"
-        >
-          <CaretLeft size={14} weight="bold" />
-          <span>返回</span>
-        </button>
-        <div className="flex items-center gap-1">
-          {onRefresh && (
-            <button
-              onClick={() => {
-                setRefreshing(true)
-                onRefresh()
-                setTimeout(() => setRefreshing(false), 600)
-              }}
-              className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-              aria-label="刷新"
-              title="刷新"
-            >
-              <ArrowClockwise size={15} className={refreshing ? 'animate-spin' : ''} />
-            </button>
-          )}
-          <button
-            onClick={() => {
-              // 下载文件
-              const encodedPath = fileInfo.path.split('/').map(s => encodeURIComponent(s)).join('/')
-              const a = document.createElement('a')
-              a.href = `/api/files/${encodedPath}?download=1`
-              a.download = fileName
-              // 对于文本文件，直接用内容创建 blob 下载
-              if (fileInfo.content) {
-                const blob = new Blob([fileInfo.content], { type: 'text/plain' })
-                a.href = URL.createObjectURL(blob)
-              }
-              a.click()
-            }}
-            className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-            aria-label="下载"
-            title="下载"
-          >
-            <DownloadSimple size={15} />
-          </button>
-        </div>
-      </div>
-
       {/* 文件名 */}
       <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)] mb-4">
         {fileName}

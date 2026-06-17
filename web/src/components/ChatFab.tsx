@@ -114,13 +114,16 @@ function renderMarkdown(text: string): string {
 
   processed = result.join('\n')
 
-  // 处理换行：连续空行合并为一个段落间隔，单个换行为 <br>
+  // 换行处理：连续空行压缩，但不用 <p> 标签（避免列表内被撑开）
   processed = processed
-    .replace(/\n{3,}/g, '\n\n')           // 3个以上换行合并为2个
-    .replace(/\n\n/g, '</p><p>')          // 双换行 = 段落分隔
-    .replace(/\n/g, '<br/>')              // 单换行 = 行内换行
-  processed = `<p>${processed}</p>`
-  processed = processed.replace(/<p><\/p>/g, '') // 清理空段落
+    .replace(/\n{3,}/g, '\n\n')           // 3+ 空行合并为 2
+    .replace(/\n\n/g, '<br/><br/>')       // 双换行 = 一个空行间隔
+    .replace(/\n/g, '<br/>')              // 单换行
+  // 清理列表标签旁边的多余 br
+  processed = processed.replace(/<br\/>(<\/?[uo]l)/g, '$1')
+  processed = processed.replace(/(<\/?[uo]l[^>]*>)<br\/>/g, '$1')
+  processed = processed.replace(/<br\/>(<li>)/g, '$1')
+  processed = processed.replace(/(<\/li>)<br\/>/g, '$1')
 
   codeBlocks.forEach((block, i) => {
     processed = processed.replace(`\x00CODEBLOCK_${i}\x00`, block)

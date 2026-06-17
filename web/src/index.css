@@ -453,10 +453,10 @@ body {
 
 /* 顶部加载进度条动画 */
 @keyframes progress {
-  0% { width: 0; margin-left: 0; }
-  50% { width: 70%; margin-left: 0; }
-  100% { width: 0; margin-left: 100%; }
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 .animate-progress {
-  animation: progress 1.2s ease-in-out infinite;
+  width: 100%;
+  animation: progress 0.8s ease-in-out infinite;
 }
