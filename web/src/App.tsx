@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { Sun, Moon } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
 import { FileList } from './components/FileList'
 import { FileViewer } from './components/FileViewer'
@@ -31,7 +32,24 @@ export function App() {
   const [loading, setLoading] = useState(true)
   const [direction, setDirection] = useState<Direction>('forward')
   const [searchOpen, setSearchOpen] = useState(false)
+  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
+    if (typeof window === 'undefined') return 'dark'
+    const stored = localStorage.getItem('theme')
+    if (stored === 'light') return 'light'
+    if (stored === 'dark') return 'dark'
+    return window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark'
+  })
   const reducedMotion = useReducedMotion()
+
+  // 主题切换
+  useEffect(() => {
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light')
+    } else {
+      document.documentElement.removeAttribute('data-theme')
+    }
+    localStorage.setItem('theme', theme)
+  }, [theme])
 
   // 从 URL 初始化路径
   useEffect(() => {
@@ -44,7 +62,11 @@ export function App() {
     const fetchData = async () => {
       setLoading(true)
       try {
-        const url = currentPath ? `/api/files/${encodeURIComponent(currentPath)}` : '/api/files'
+        // 对路径中每一段分别 encode，保留 /
+        const encodedPath = currentPath
+          ? '/' + currentPath.split('/').map(s => encodeURIComponent(s)).join('/')
+          : ''
+        const url = `/api/files${encodedPath}`
         const res = await fetch(url)
         if (res.ok) {
           const data = await res.json()
@@ -128,13 +150,22 @@ export function App() {
       <header className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
           <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
-          <button
-            onClick={() => setSearchOpen(true)}
-            className="flex items-center gap-1.5 text-xs text-[var(--color-muted)] px-2.5 py-1.5 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)] transition-colors cursor-pointer"
-            aria-label="搜索"
-          >
-            <kbd className="font-mono text-[10px]">⌘K</kbd>
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+              className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+              aria-label="切换主题"
+            >
+              {theme === 'dark' ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button
+              onClick={() => setSearchOpen(true)}
+              className="flex items-center gap-1.5 text-xs text-[var(--color-muted)] px-2.5 py-1.5 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)] transition-colors cursor-pointer"
+              aria-label="搜索"
+            >
+              <kbd className="font-mono text-[10px]">⌘K</kbd>
+            </button>
+          </div>
         </div>
       </header>
 
@@ -180,11 +211,10 @@ export function App() {
       <SearchModal
         open={searchOpen}
         onClose={() => setSearchOpen(false)}
-        entries={fileInfo?.entries ?? []}
-        onNavigate={(name) => {
+        currentPath={currentPath}
+        onNavigate={(path) => {
           setSearchOpen(false)
-          const fullPath = currentPath ? `${currentPath}/${name}` : name
-          navigate(fullPath, 'forward')
+          navigate(path, 'forward')
         }}
       />
 

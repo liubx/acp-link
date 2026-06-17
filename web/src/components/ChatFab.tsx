@@ -295,11 +295,13 @@ export function ChatFab() {
   // 代码块复制
   const handleMessageClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement
-    if (target.classList.contains('copy-btn')) {
-      const code = decodeURIComponent(target.dataset.code || '')
-      navigator.clipboard.writeText(code)
-      setCopiedIdx(Date.now())
-      setTimeout(() => setCopiedIdx(null), 2000)
+    const copyBtn = target.closest('.copy-btn') as HTMLElement | null
+    if (copyBtn) {
+      const code = decodeURIComponent(copyBtn.dataset.code || '')
+      navigator.clipboard.writeText(code).then(() => {
+        copyBtn.textContent = '已复制'
+        setTimeout(() => { copyBtn.textContent = '复制' }, 1500)
+      })
     }
   }, [])
 

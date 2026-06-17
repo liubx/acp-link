@@ -6,24 +6,39 @@ import type { FileEntry } from '../App'
 interface Props {
   open: boolean
   onClose: () => void
-  entries: FileEntry[]
+  currentPath: string
   onNavigate: (path: string) => void
 }
 
-export function SearchModal({ open, onClose, entries, onNavigate }: Props) {
+export function SearchModal({ open, onClose, currentPath, onNavigate }: Props) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
+  const [entries, setEntries] = useState<FileEntry[]>([])
   const inputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
 
-  // 打开时聚焦输入框
+  // 打开时获取当前目录（或父目录）的文件列表
   useEffect(() => {
-    if (open) {
-      setQuery('')
-      setSelectedIndex(0)
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
-  }, [open])
+    if (!open) return
+    setQuery('')
+    setSelectedIndex(0)
+    setTimeout(() => inputRef.current?.focus(), 50)
+
+    // 取当前路径的父目录（如果当前是文件的话）
+    const dirPath = currentPath.includes('.')
+      ? currentPath.split('/').slice(0, -1).join('/')
+      : currentPath
+    const encodedPath = dirPath
+      ? '/' + dirPath.split('/').map(s => encodeURIComponent(s)).join('/')
+      : ''
+
+    fetch(`/api/files${encodedPath}`)
+      .then(r => r.json())
+      .then(data => {
+        if (data?.entries) setEntries(data.entries)
+      })
+      .catch(() => {})
+  }, [open, currentPath])
 
   // 过滤结果
   const results = useMemo(() => {
@@ -48,7 +63,13 @@ export function SearchModal({ open, onClose, entries, onNavigate }: Props) {
       e.preventDefault()
       setSelectedIndex(i => Math.max(i - 1, 0))
     } else if (e.key === 'Enter' && results[selectedIndex]) {
-      onNavigate(results[selectedIndex].name)
+      const entry = results[selectedIndex]
+      // 构建完整路径
+      const dirPath = currentPath.includes('.')
+        ? currentPath.split('/').slice(0, -1).join('/')
+        : currentPath
+      const fullPath = dirPath ? `${dirPath}/${entry.name}` : entry.name
+      onNavigate(fullPath)
     }
   }
 
@@ -64,10 +85,8 @@ export function SearchModal({ open, onClose, entries, onNavigate }: Props) {
           exit={{ opacity: 0 }}
           transition={{ duration: reducedMotion ? 0 : 0.15 }}
         >
-          {/* 背景遮罩 */}
           <div className="absolute inset-0 bg-black/50" onClick={onClose} />
 
-          {/* 搜索框 */}
           <motion.div
             className="relative w-full max-w-lg mx-4 bg-[var(--color-surface)] border border-[var(--color-border)] rounded-xl shadow-2xl overflow-hidden"
             initial={{ scale: reducedMotion ? 1 : 0.95, opacity: 0 }}
@@ -75,7 +94,6 @@ export function SearchModal({ open, onClose, entries, onNavigate }: Props) {
             exit={{ scale: reducedMotion ? 1 : 0.95, opacity: 0 }}
             transition={{ duration: reducedMotion ? 0 : 0.15 }}
           >
-            {/* 输入区 */}
             <div className="flex items-center gap-3 px-4 h-12 border-b border-[var(--color-border)]">
               <MagnifyingGlass size={18} className="text-[var(--color-muted)] flex-shrink-0" />
               <input
@@ -89,32 +107,37 @@ export function SearchModal({ open, onClose, entries, onNavigate }: Props) {
               <kbd className="text-[10px] text-[var(--color-dim)] font-mono px-1.5 py-0.5 rounded border border-[var(--color-border)]">ESC</kbd>
             </div>
 
-            {/* 结果列表 */}
             <div className="max-h-[300px] overflow-y-auto py-2">
               {results.length === 0 ? (
                 <div className="px-4 py-6 text-center text-xs text-[var(--color-dim)]">
                   无匹配结果
                 </div>
               ) : (
-                results.slice(0, 20).map((entry, i) => (
-                  <button
-                    key={entry.name}
-                    onClick={() => onNavigate(entry.name)}
-                    onMouseEnter={() => setSelectedIndex(i)}
-                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors ${
-                      i === selectedIndex
-                        ? 'bg-[var(--color-accent-dim)] text-[var(--color-fg)]'
-                        : 'text-[var(--color-muted)] hover:bg-[var(--color-accent-dim)]'
-                    }`}
-                  >
-                    {entry.is_dir ? (
-                      <FolderSimple size={16} weight="fill" className="text-[var(--color-accent)] flex-shrink-0" />
-                    ) : (
-                      <FileText size={16} className="flex-shrink-0" />
-                    )}
-                    <span className="text-sm font-mono truncate">{entry.name}</span>
-                  </button>
-                ))
+                results.slice(0, 20).map((entry, i) => {
+                  const dirPath = currentPath.includes('.')
+                    ? currentPath.split('/').slice(0, -1).join('/')
+                    : currentPath
+                  const fullPath = dirPath ? `${dirPath}/${entry.name}` : entry.name
+                  return (
+                    <button
+                      key={entry.name}
+                      onClick={() => onNavigate(fullPath)}
+                      onMouseEnter={() => setSelectedIndex(i)}
+                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors ${
+                        i === selectedIndex
+                          ? 'bg-[var(--color-accent-dim)] text-[var(--color-fg)]'
+                          : 'text-[var(--color-muted)] hover:bg-[var(--color-accent-dim)]'
+                      }`}
+                    >
+                      {entry.is_dir ? (
+                        <FolderSimple size={16} weight="fill" className="text-[var(--color-accent)] flex-shrink-0" />
+                      ) : (
+                        <FileText size={16} className="flex-shrink-0" />
+                      )}
+                      <span className="text-sm font-mono truncate">{entry.name}</span>
+                    </button>
+                  )
+                })
               )}
             </div>
           </motion.div>
