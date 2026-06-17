@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Copy, Check, DownloadSimple } from '@phosphor-icons/react'
+import { Copy, Check } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
@@ -48,18 +48,9 @@ export function FileViewer({ fileInfo }: Props) {
 
       {/* 内容区 */}
       {isBinary ? (
-        <div className="py-12 text-center border border-[var(--color-border)] rounded-lg bg-[var(--color-surface)]">
-          <DownloadSimple size={32} className="mx-auto text-[var(--color-muted)] mb-3" />
-          <p className="text-sm text-[var(--color-fg)] mb-1">{fileName}</p>
-          {fileInfo.size && <p className="text-xs text-[var(--color-dim)] mb-4">大小: {fileInfo.size}</p>}
-          <a
-            href={`/${fileInfo.path}`}
-            download={fileName}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-[var(--color-accent)] text-white text-sm hover:brightness-110 transition-all"
-          >
-            <DownloadSimple size={14} />
-            下载文件
-          </a>
+        <div className="py-12 text-center text-[var(--color-dim)] border border-[var(--color-border)] rounded-lg bg-[var(--color-surface)]">
+          <p className="text-sm">无法预览二进制文件</p>
+          {fileInfo.size && <p className="text-xs mt-1">大小: {fileInfo.size}</p>}
         </div>
       ) : isMarkdown && fileInfo.content ? (
         <article className="markdown-body">

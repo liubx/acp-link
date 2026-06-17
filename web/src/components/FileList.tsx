@@ -121,7 +121,18 @@ export function FileList({ entries, currentPath, onNavigate }: Props) {
         {sorted.map(entry => (
           <button
             key={entry.name}
-            onClick={() => onNavigate(getEntryPath(entry.name), 'forward')}
+            onClick={() => {
+              const ext = getExtension(entry.name)
+              const isPreviewable = entry.is_dir || TEXT_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext)
+              if (isPreviewable) {
+                onNavigate(getEntryPath(entry.name), 'forward')
+              } else {
+                // 不可预览的文件：直接下载/新标签打开
+                const path = getEntryPath(entry.name)
+                const encodedPath = path.split('/').map(s => encodeURIComponent(s)).join('/')
+                window.open(`/${encodedPath}`, '_blank')
+              }
+            }}
             onMouseEnter={(e) => handleMouseEnter(entry, e)}
             onMouseLeave={handleMouseLeave}
             className="w-full flex items-center gap-3 px-3 py-3 sm:py-2.5 text-left hover:bg-[var(--color-surface)] rounded-lg transition-colors cursor-pointer group min-h-[44px]"

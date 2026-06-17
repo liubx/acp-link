@@ -69,20 +69,6 @@ export function App() {
         const res = await fetch(url)
         if (res.ok) {
           const data = await res.json()
-          // 二进制文件直接下载，不在页面展示
-          if (data.type === 'binary') {
-            const fileName = currentPath.split('/').pop() || 'file'
-            const encodedPath = '/' + currentPath.split('/').map(s => encodeURIComponent(s)).join('/')
-            const a = document.createElement('a')
-            a.href = encodedPath
-            a.download = fileName
-            a.click()
-            // 回到上级目录
-            const parts = currentPath.split('/').filter(Boolean)
-            parts.pop()
-            setCurrentPath(parts.join('/'))
-            return
-          }
           setFileInfo(data)
         } else {
           if (!isRefresh) setFileInfo(null)
