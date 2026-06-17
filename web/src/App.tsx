@@ -31,6 +31,7 @@ export function App() {
   })
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [loading, setLoading] = useState(true)
+  const [refreshKey, setRefreshKey] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
   const [theme, setTheme] = useState<'dark' | 'light' | 'auto'>(() => {
     if (typeof window === 'undefined') return 'auto'
@@ -76,7 +77,8 @@ export function App() {
       }
     }
     fetchData()
-  }, [currentPath])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentPath, refreshKey])
 
   // URL 同步
   useEffect(() => {
@@ -187,7 +189,7 @@ export function App() {
                 </div>
               </div>
             ) : isFile ? (
-              <FileViewer fileInfo={fileInfo} onBack={goBack} />
+              <FileViewer fileInfo={fileInfo} onBack={goBack} onRefresh={() => setRefreshKey(k => k + 1)} />
             ) : isDirectory && fileInfo?.entries ? (
               <FileList
                 entries={fileInfo.entries}
