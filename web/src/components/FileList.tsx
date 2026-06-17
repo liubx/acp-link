@@ -1,0 +1,161 @@
+import { useState, useRef, useCallback } from 'react'
+import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
+import { FolderSimple, FileText, FileCode, Image, File } from '@phosphor-icons/react'
+import type { FileEntry } from '../App'
+
+// 可预览的文本文件扩展名
+const TEXT_EXTENSIONS = new Set([
+  'md', 'txt', 'json', 'yaml', 'yml', 'toml', 'rs', 'py', 'js', 'ts',
+  'tsx', 'jsx', 'html', 'css', 'scss', 'sh', 'bash', 'zsh', 'fish',
+  'go', 'java', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'swift', 'kt',
+  'lua', 'vim', 'conf', 'ini', 'env', 'xml', 'svg', 'sql', 'graphql',
+  'dockerfile', 'makefile', 'gitignore', 'lock',
+])
+
+// 代码文件扩展名
+const CODE_EXTENSIONS = new Set([
+  'rs', 'py', 'js', 'ts', 'tsx', 'jsx', 'go', 'java', 'c', 'cpp',
+  'h', 'hpp', 'rb', 'php', 'swift', 'kt', 'lua', 'sh', 'bash',
+  'sql', 'graphql',
+])
+
+// 图片文件扩展名
+const IMAGE_EXTENSIONS = new Set(['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'ico', 'bmp'])
+
+function getExtension(name: string): string {
+  const lower = name.toLowerCase()
+  // 特殊文件名
+  if (lower === 'makefile' || lower === 'dockerfile') return lower
+  const dot = lower.lastIndexOf('.')
+  return dot >= 0 ? lower.slice(dot + 1) : ''
+}
+
+function isTextFile(name: string): boolean {
+  const ext = getExtension(name)
+  return TEXT_EXTENSIONS.has(ext)
+}
+
+function getFileIcon(entry: FileEntry) {
+  if (entry.is_dir) {
+    return <FolderSimple size={18} weight="fill" className="text-[var(--color-accent)]" />
+  }
+  const ext = getExtension(entry.name)
+  if (IMAGE_EXTENSIONS.has(ext)) {
+    return <Image size={18} className="text-[var(--color-muted)]" />
+  }
+  if (CODE_EXTENSIONS.has(ext)) {
+    return <FileCode size={18} className="text-[var(--color-muted)]" />
+  }
+  if (TEXT_EXTENSIONS.has(ext)) {
+    return <FileText size={18} className="text-[var(--color-muted)]" />
+  }
+  return <File size={18} className="text-[var(--color-muted)]" />
+}
+
+interface Props {
+  entries: FileEntry[]
+  currentPath: string
+  onNavigate: (path: string, direction: 'forward' | 'back') => void
+}
+
+export function FileList({ entries, onNavigate }: Props) {
+  const [previewPath, setPreviewPath] = useState<string | null>(null)
+  const [previewContent, setPreviewContent] = useState<string | null>(null)
+  const [previewPos, setPreviewPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
+  const hoverTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const reducedMotion = useReducedMotion()
+
+  // 是否为触摸设备
+  const isTouchDevice = typeof window !== 'undefined' && 'ontouchstart' in window
+
+  // 排序: 目录在前，然后按名字排序
+  const sorted = [...entries].sort((a, b) => {
+    if (a.is_dir && !b.is_dir) return -1
+    if (!a.is_dir && b.is_dir) return 1
+    return a.name.localeCompare(b.name)
+  })
+
+  // 鼠标进入文件行
+  const handleMouseEnter = useCallback((entry: FileEntry, e: React.MouseEvent) => {
+    if (isTouchDevice || entry.is_dir || !isTextFile(entry.name)) return
+
+    const rect = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    setPreviewPos({ x: rect.right + 12, y: rect.top })
+
+    hoverTimer.current = setTimeout(async () => {
+      try {
+        const res = await fetch(`/api/files/${encodeURIComponent(entry.path)}`)
+        if (res.ok) {
+          const data = await res.json()
+          if (data.content) {
+            const lines = data.content.split('\n').slice(0, 3).join('\n')
+            setPreviewContent(lines)
+            setPreviewPath(entry.path)
+          }
+        }
+      } catch {
+        // 静默失败
+      }
+    }, 500)
+  }, [isTouchDevice])
+
+  // 鼠标离开
+  const handleMouseLeave = useCallback(() => {
+    if (hoverTimer.current) {
+      clearTimeout(hoverTimer.current)
+      hoverTimer.current = null
+    }
+    setPreviewPath(null)
+    setPreviewContent(null)
+  }, [])
+
+  return (
+    <div className="max-w-2xl mx-auto px-4 sm:px-6 py-4">
+      <div className="divide-y divide-[var(--color-border)]">
+        {sorted.map(entry => (
+          <button
+            key={entry.path}
+            onClick={() => onNavigate(entry.path, 'forward')}
+            onMouseEnter={(e) => handleMouseEnter(entry, e)}
+            onMouseLeave={handleMouseLeave}
+            className="w-full flex items-center gap-3 px-3 py-3 sm:py-2.5 text-left hover:bg-[var(--color-surface)] rounded-lg transition-colors cursor-pointer group min-h-[44px]"
+          >
+            {getFileIcon(entry)}
+            <span className="text-sm font-mono text-[var(--color-fg)] group-hover:text-[var(--color-accent)] transition-colors truncate">
+              {entry.name}
+            </span>
+            {entry.is_dir && (
+              <span className="ml-auto text-[var(--color-dim)] text-xs">→</span>
+            )}
+          </button>
+        ))}
+
+        {sorted.length === 0 && (
+          <div className="py-12 text-center text-sm text-[var(--color-dim)]">
+            空目录
+          </div>
+        )}
+      </div>
+
+      {/* 文件预览气泡 */}
+      <AnimatePresence>
+        {previewPath && previewContent && (
+          <motion.div
+            initial={{ opacity: 0, y: reducedMotion ? 0 : 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: reducedMotion ? 0 : 4 }}
+            transition={{ duration: reducedMotion ? 0 : 0.15 }}
+            className="fixed z-40 max-w-sm pointer-events-none"
+            style={{ left: Math.min(previewPos.x, window.innerWidth - 360), top: previewPos.y }}
+          >
+            <div className="bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg shadow-xl p-3">
+              <pre className="text-[11px] leading-relaxed text-[var(--color-muted)] font-mono whitespace-pre-wrap overflow-hidden max-h-[72px]">
+                {previewContent}
+              </pre>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}

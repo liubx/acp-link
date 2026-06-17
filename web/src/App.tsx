@@ -1,159 +1,196 @@
 import { useState, useEffect, useCallback } from 'react'
-import { Sidebar } from './components/Sidebar'
-import { Toolbar } from './components/Toolbar'
-import { ContentView } from './components/ContentView'
-import { ChatPanel } from './components/ChatPanel'
-import './index.css'
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
+import { SearchModal } from './components/SearchModal'
+import { FileList } from './components/FileList'
+import { FileViewer } from './components/FileViewer'
+import { ChatFab } from './components/ChatFab'
+import { Breadcrumb } from './components/Breadcrumb'
 
+// API 响应类型
 export interface FileEntry {
   name: string
+  path: string
   is_dir: boolean
-  ext: string
+  size?: number
+  modified?: string
 }
 
 export interface FileInfo {
-  type: 'directory' | 'markdown' | 'code' | 'binary'
+  name: string
   path: string
-  entries?: FileEntry[]
+  is_dir: boolean
   content?: string
-  ext?: string
-  line_count?: number
-  size?: string
+  is_binary?: boolean
+  size?: number
+  entries?: FileEntry[]
 }
 
-// 媒体查询 hook
-function useIsDesktop() {
-  const [isDesktop, setIsDesktop] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 640px)').matches : true
-  )
-
-  useEffect(() => {
-    const mq = window.matchMedia('(min-width: 640px)')
-    const handler = (e: MediaQueryListEvent) => setIsDesktop(e.matches)
-    mq.addEventListener('change', handler)
-    return () => mq.removeEventListener('change', handler)
-  }, [])
-
-  return isDesktop
-}
+type Direction = 'forward' | 'back'
 
 export function App() {
-  const [currentPath, setCurrentPath] = useState('/')
+  const [currentPath, setCurrentPath] = useState('')
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [loading, setLoading] = useState(true)
-  const isDesktop = useIsDesktop()
-  const [sidebarOpen, setSidebarOpen] = useState(() =>
-    typeof window !== 'undefined' ? window.matchMedia('(min-width: 640px)').matches : true
-  )
-  const [chatOpen, setChatOpen] = useState(false)
-  const [theme, setTheme] = useState<'dark' | 'light'>(() => {
-    const stored = localStorage.getItem('theme')
-    if (stored === 'light') return 'light'
-    return 'dark'
-  })
+  const [direction, setDirection] = useState<Direction>('forward')
+  const [searchOpen, setSearchOpen] = useState(false)
+  const reducedMotion = useReducedMotion()
 
-  // 屏幕变化时自动关闭移动端 overlay
+  // 从 URL 初始化路径
   useEffect(() => {
-    if (isDesktop) {
-      // 切到桌面端，如果侧边栏关着可以打开
-    } else {
-      // 切到移动端，侧边栏默认关闭
-      setSidebarOpen(false)
-    }
-  }, [isDesktop])
-
-  // 主题切换
-  useEffect(() => {
-    if (theme === 'light') {
-      document.documentElement.setAttribute('data-theme', 'light')
-    } else {
-      document.documentElement.removeAttribute('data-theme')
-    }
-    localStorage.setItem('theme', theme)
-  }, [theme])
-
-  // 加载文件/目录数据
-  const loadPath = useCallback((path: string) => {
+    const path = decodeURIComponent(window.location.pathname.replace(/^\//, ''))
     setCurrentPath(path)
-    setLoading(true)
-    const cleanPath = path === '/' ? '' : path.replace(/\/+$/, '')
-    fetch(`/api/files${cleanPath}`)
-      .then(r => r.ok ? r.json() : null)
-      .then(data => { setFileInfo(data); setLoading(false) })
-      .catch(() => { setFileInfo(null); setLoading(false) })
-
-    // 更新浏览器 URL（不刷新）
-    window.history.pushState(null, '', path)
-
-    // 移动端导航后自动关闭侧边栏
-    if (!isDesktop) {
-      setSidebarOpen(false)
-    }
-  }, [isDesktop])
-
-  // 初始加载
-  useEffect(() => {
-    const path = window.location.pathname || '/'
-    setCurrentPath(path)
-    loadPath(path)
-  }, [loadPath])
-
-  // 浏览器前进/后退
-  useEffect(() => {
-    const handler = () => {
-      const path = window.location.pathname || '/'
-      setCurrentPath(path)
-      loadPath(path)
-    }
-    window.addEventListener('popstate', handler)
-    return () => window.removeEventListener('popstate', handler)
-  }, [loadPath])
-
-  // 移动端侧边栏关闭回调
-  const handleSidebarClose = useCallback(() => {
-    setSidebarOpen(false)
   }, [])
 
+  // 获取文件/目录信息
+  useEffect(() => {
+    const fetchData = async () => {
+      setLoading(true)
+      try {
+        const url = currentPath ? `/api/files/${encodeURIComponent(currentPath)}` : '/api/files'
+        const res = await fetch(url)
+        if (res.ok) {
+          const data = await res.json()
+          setFileInfo(data)
+        } else {
+          setFileInfo(null)
+        }
+      } catch {
+        setFileInfo(null)
+      } finally {
+        setLoading(false)
+      }
+    }
+    fetchData()
+  }, [currentPath])
+
+  // URL 同步
+  useEffect(() => {
+    const urlPath = currentPath ? `/${currentPath}` : '/'
+    if (window.location.pathname !== urlPath) {
+      window.history.pushState(null, '', urlPath)
+    }
+  }, [currentPath])
+
+  // 处理浏览器前进/后退
+  useEffect(() => {
+    const handlePop = () => {
+      const path = decodeURIComponent(window.location.pathname.replace(/^\//, ''))
+      setDirection('back')
+      setCurrentPath(path)
+    }
+    window.addEventListener('popstate', handlePop)
+    return () => window.removeEventListener('popstate', handlePop)
+  }, [])
+
+  // Cmd+K 快捷键
+  useEffect(() => {
+    const handleKey = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handleKey)
+    return () => window.removeEventListener('keydown', handleKey)
+  }, [])
+
+  // 导航函数
+  const navigate = useCallback((path: string, dir: Direction = 'forward') => {
+    setDirection(dir)
+    setCurrentPath(path)
+  }, [])
+
+  // 返回上级目录
+  const goBack = useCallback(() => {
+    const parts = currentPath.split('/').filter(Boolean)
+    parts.pop()
+    navigate(parts.join('/'), 'back')
+  }, [currentPath, navigate])
+
+  // 动画变体
+  const variants = {
+    enter: (dir: Direction) => ({
+      x: reducedMotion ? 0 : dir === 'forward' ? 80 : -80,
+      opacity: 0,
+    }),
+    center: { x: 0, opacity: 1 },
+    exit: (dir: Direction) => ({
+      x: reducedMotion ? 0 : dir === 'forward' ? -80 : 80,
+      opacity: 0,
+    }),
+  }
+
+  // 判断当前是目录还是文件
+  const isDirectory = fileInfo?.is_dir ?? true
+  const isFile = fileInfo && !fileInfo.is_dir
+
   return (
-    <div className="h-dvh flex flex-col overflow-hidden bg-[var(--color-bg)]">
-      {/* 顶部工具栏 */}
-      <Toolbar
-        currentPath={currentPath}
-        sidebarOpen={sidebarOpen}
-        onToggleSidebar={() => setSidebarOpen(s => !s)}
-        onToggleChat={() => setChatOpen(c => !c)}
-        chatOpen={chatOpen}
-        theme={theme}
-        onToggleTheme={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
-        onNavigate={loadPath}
+    <div className="min-h-screen flex flex-col">
+      {/* 顶部导航 */}
+      <header className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
+          <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
+          <button
+            onClick={() => setSearchOpen(true)}
+            className="flex items-center gap-1.5 text-xs text-[var(--color-muted)] px-2.5 py-1.5 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)] transition-colors cursor-pointer"
+            aria-label="搜索"
+          >
+            <kbd className="font-mono text-[10px]">⌘K</kbd>
+          </button>
+        </div>
+      </header>
+
+      {/* 主内容区 */}
+      <main className="flex-1 relative">
+        <AnimatePresence mode="wait" custom={direction}>
+          <motion.div
+            key={currentPath + (isFile ? '-file' : '-dir')}
+            custom={direction}
+            variants={variants}
+            initial="enter"
+            animate="center"
+            exit="exit"
+            transition={{ duration: reducedMotion ? 0 : 0.2, ease: 'easeOut' }}
+            className="w-full"
+          >
+            {loading ? (
+              <div className="max-w-2xl mx-auto px-4 sm:px-6 py-12">
+                <div className="space-y-3">
+                  {[...Array(5)].map((_, i) => (
+                    <div key={i} className="h-11 rounded-lg bg-[var(--color-surface)] animate-pulse" />
+                  ))}
+                </div>
+              </div>
+            ) : isFile ? (
+              <FileViewer fileInfo={fileInfo} onBack={goBack} />
+            ) : isDirectory && fileInfo?.entries ? (
+              <FileList
+                entries={fileInfo.entries}
+                currentPath={currentPath}
+                onNavigate={navigate}
+              />
+            ) : (
+              <div className="max-w-2xl mx-auto px-4 sm:px-6 py-12 text-center text-[var(--color-muted)]">
+                无法加载此路径
+              </div>
+            )}
+          </motion.div>
+        </AnimatePresence>
+      </main>
+
+      {/* 搜索弹窗 */}
+      <SearchModal
+        open={searchOpen}
+        onClose={() => setSearchOpen(false)}
+        entries={fileInfo?.entries ?? []}
+        onNavigate={(path) => {
+          setSearchOpen(false)
+          navigate(path, 'forward')
+        }}
       />
 
-      {/* 主体区域 */}
-      <div className="flex-1 flex overflow-hidden">
-        {/* 侧边栏文件树 */}
-        {sidebarOpen && (
-          <Sidebar
-            currentPath={currentPath}
-            onNavigate={loadPath}
-            onClose={handleSidebarClose}
-          />
-        )}
-
-        {/* 主内容区 */}
-        <main className="flex-1 overflow-auto">
-          <ContentView
-            fileInfo={fileInfo}
-            loading={loading}
-            onNavigate={loadPath}
-            currentPath={currentPath}
-          />
-        </main>
-
-        {/* 聊天侧边栏 */}
-        {chatOpen && (
-          <ChatPanel onClose={() => setChatOpen(false)} />
-        )}
-      </div>
+      {/* 悬浮聊天按钮 */}
+      <ChatFab />
     </div>
   )
 }
