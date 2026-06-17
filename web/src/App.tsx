@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { Sun, Moon, CircleHalf } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
@@ -54,11 +54,15 @@ export function App() {
   }
 
   // 获取文件/目录信息
+  const prevPathRef = useRef(currentPath)
   useEffect(() => {
+    const isRefresh = prevPathRef.current === currentPath && refreshKey > 0
+    prevPathRef.current = currentPath
+
     const fetchData = async () => {
-      setLoading(true)
+      // 刷新时不显示 loading（静默更新），路径变化时才显示
+      if (!isRefresh) setLoading(true)
       try {
-        // 对路径中每一段分别 encode，保留 /
         const encodedPath = currentPath
           ? '/' + currentPath.split('/').map(s => encodeURIComponent(s)).join('/')
           : ''
