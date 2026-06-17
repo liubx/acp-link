@@ -72,6 +72,7 @@ body {
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   transition: background-color .2s, color .2s;
+  overflow-y: scroll; /* 始终显示滚动条轨道，避免页面宽度跳变 */
 }
 
 ::selection {
