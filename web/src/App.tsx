@@ -60,8 +60,7 @@ export function App() {
     prevPathRef.current = currentPath
 
     const fetchData = async () => {
-      // 刷新时不显示 loading（静默更新），路径变化时才显示
-      if (!isRefresh) setLoading(true)
+      setLoading(true)
       try {
         const encodedPath = currentPath
           ? '/' + currentPath.split('/').map(s => encodeURIComponent(s)).join('/')
@@ -72,10 +71,10 @@ export function App() {
           const data = await res.json()
           setFileInfo(data)
         } else {
-          setFileInfo(null)
+          if (!isRefresh) setFileInfo(null)
         }
       } catch {
-        setFileInfo(null)
+        if (!isRefresh) setFileInfo(null)
       } finally {
         setLoading(false)
       }
@@ -147,6 +146,13 @@ export function App() {
 
   return (
     <div className="min-h-screen flex flex-col">
+      {/* 顶部进度条 */}
+      {loading && (
+        <div className="fixed top-0 left-0 right-0 z-50 h-[2px] bg-[var(--color-border)] overflow-hidden">
+          <div className="h-full bg-[var(--color-accent)] animate-progress" />
+        </div>
+      )}
+
       {/* 顶部导航 */}
       <header className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
@@ -184,7 +190,7 @@ export function App() {
             transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.4, 0, 0.2, 1] }}
             className="w-full"
           >
-            {loading ? (
+            {loading && !fileInfo ? (
               <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
                 <div className="space-y-3">
                   {[...Array(5)].map((_, i) => (
