@@ -125,7 +125,7 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
   }, [])
 
   return (
-    <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+    <div className="max-w-5xl mx-auto px-4 sm:px-6 py-4">
       {onBack && currentPath && (
         <div className="flex items-center gap-2 mb-3">
           <button

@@ -171,7 +171,7 @@ export function App() {
 
       {/* 顶部导航 */}
       <header className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
+        <div className="max-w-5xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
           <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
           <div className="flex items-center gap-1.5">
             {isFile && fileInfo && (
@@ -228,7 +228,7 @@ export function App() {
             className="w-full"
           >
             {loading && !fileInfo ? (
-              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12">
+              <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
                 <div className="space-y-3">
                   {[...Array(5)].map((_, i) => (
                     <div key={i} className="h-11 rounded-lg bg-[var(--color-surface)] animate-pulse" />
@@ -251,7 +251,7 @@ export function App() {
                 } : undefined}
               />
             ) : (
-              <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 text-center text-[var(--color-muted)]">
+              <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12 text-center text-[var(--color-muted)]">
                 无法加载此路径
               </div>
             )}

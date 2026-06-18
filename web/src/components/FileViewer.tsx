@@ -49,7 +49,7 @@ export function FileViewer({ fileInfo, onBack }: Props) {
 
   if (!fileInfo) {
     return (
-      <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 text-center text-[var(--color-muted)]">
+      <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12 text-center text-[var(--color-muted)]">
         无法加载文件
       </div>
     )
@@ -74,7 +74,7 @@ export function FileViewer({ fileInfo, onBack }: Props) {
       initial={{ opacity: reducedMotion ? 1 : 0 }}
       animate={{ opacity: 1 }}
       transition={{ duration: reducedMotion ? 0 : 0.2 }}
-      className="max-w-3xl mx-auto px-4 sm:px-6 py-4"
+      className="max-w-5xl mx-auto px-4 sm:px-6 py-4"
     >
       {/* 文件名 */}
       <div className="flex items-center gap-2 mb-4">
