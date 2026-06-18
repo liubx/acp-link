@@ -27,7 +27,9 @@ export interface FileInfo {
 export function App() {
   const [currentPath, setCurrentPath] = useState(() => {
     if (typeof window === 'undefined') return ''
-    return decodeURIComponent(window.location.pathname.replace(/^\//, ''))
+    const pathname = decodeURIComponent(window.location.pathname)
+    // 去掉 /notes 或 /notes/ 前缀
+    return pathname.replace(/^\/notes\/?/, '')
   })
   const [fileInfo, setFileInfo] = useState<FileInfo | null>(null)
   const [loading, setLoading] = useState(true)
@@ -85,7 +87,7 @@ export function App() {
 
   // URL 同步
   useEffect(() => {
-    const urlPath = currentPath ? `/${currentPath}` : '/'
+    const urlPath = currentPath ? `/notes/${currentPath}` : '/notes'
     if (window.location.pathname !== urlPath) {
       window.history.pushState(null, '', urlPath)
     }
@@ -94,7 +96,8 @@ export function App() {
   // 处理浏览器前进/后退
   useEffect(() => {
     const handlePop = () => {
-      const path = decodeURIComponent(window.location.pathname.replace(/^\//, ''))
+      const pathname = decodeURIComponent(window.location.pathname)
+      const path = pathname.replace(/^\/notes\/?/, '')
       setNavDirection('back')
       setCurrentPath(path)
     }
@@ -175,7 +178,7 @@ export function App() {
                     a.href = URL.createObjectURL(blob)
                   } else {
                     const encodedPath = fileInfo.path.split('/').map(s => encodeURIComponent(s)).join('/')
-                    a.href = `/api/files/${encodedPath}?download=1`
+                    a.href = `/${encodedPath}`
                   }
                   a.download = fileName
                   a.click()
