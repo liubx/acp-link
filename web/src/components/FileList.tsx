@@ -165,7 +165,7 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
             }}
             onMouseEnter={(e) => handleMouseEnter(entry, e)}
             onMouseLeave={handleMouseLeave}
-            className="w-full flex items-center gap-3 px-3 py-3 sm:py-2.5 text-left hover:bg-[var(--color-surface)] rounded-lg transition-all cursor-pointer group min-h-[44px] border-l-2 border-transparent hover:border-[var(--color-accent)]"
+            className="w-full flex items-center gap-3 px-3 py-3 sm:py-2.5 text-left hover:bg-[var(--color-surface)] rounded-lg transition-colors cursor-pointer group min-h-[44px]"
           >
             {getFileIcon(entry)}
             <span className="text-sm font-mono text-[var(--color-fg)] group-hover:text-[var(--color-accent)] transition-colors truncate">
