@@ -165,6 +165,7 @@ interface Message {
   role: 'user' | 'bot'
   content: string
   attachments?: Attachment[]
+  timestamp?: number
 }
 
 export function ChatFab() {
@@ -173,6 +174,8 @@ export function ChatFab() {
   const [loading, setLoading] = useState(false)
   const [toolHint, setToolHint] = useState('')
   const [dragging, setDragging] = useState(false)
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const messagesEnd = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
@@ -200,10 +203,23 @@ export function ChatFab() {
     }
   }, [open])
 
-  // 滚动到底部
+  // Escape 关闭面板
   useEffect(() => {
-    messagesEnd.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior })
-  }, [messages])
+    if (!open) return
+    const handleEsc = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        if (lightboxSrc) setLightboxSrc(null)
+        else setOpen(false)
+      }
+    }
+    window.addEventListener('keydown', handleEsc)
+    return () => window.removeEventListener('keydown', handleEsc)
+  }, [open, lightboxSrc])
+
+  // 滚动到底部（消息变化或面板打开时）
+  useEffect(() => {
+    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior }), 50)
+  }, [messages, open])
 
   // 上传文件
   const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
@@ -297,6 +313,11 @@ export function ChatFab() {
   // 代码块复制
   const handleMessageClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement
+    // 图片点击放大
+    if (target.tagName === 'IMG' && target.classList.contains('chat-img')) {
+      setLightboxSrc((target as HTMLImageElement).src)
+      return
+    }
     const copyBtn = target.closest('.copy-btn') as HTMLElement | null
     if (copyBtn) {
       const code = decodeURIComponent(copyBtn.dataset.code || '')
@@ -305,6 +326,24 @@ export function ChatFab() {
         setTimeout(() => { copyBtn.textContent = '复制' }, 1500)
       })
     }
+  }, [])
+
+  // 清除对话（重置 session）
+  const clearChat = useCallback(() => {
+    setMessages([])
+    localStorage.removeItem('chat-history')
+    localStorage.removeItem('chat-session')
+    setToolHint('')
+  }, [])
+
+  // 停止生成
+  const stopGeneration = useCallback(() => {
+    if (abortRef.current) {
+      abortRef.current.abort()
+      abortRef.current = null
+    }
+    setLoading(false)
+    setToolHint('')
   }, [])
 
   // 从 contenteditable 提取 blocks
@@ -366,12 +405,15 @@ export function ChatFab() {
       .filter(b => b.type === 'image' || b.type === 'file')
       .map(b => ({ name: '', path: b.content, type: b.type as 'image' | 'file' }))
 
-    setMessages(prev => [...prev, { role: 'user', content, attachments: msgAttachments }])
+    setMessages(prev => [...prev, { role: 'user', content, attachments: msgAttachments, timestamp: Date.now() }])
     setLoading(true)
 
     try {
       const session = localStorage.getItem('chat-session') || `web-${Math.random().toString(36).slice(2, 10)}`
       if (!localStorage.getItem('chat-session')) localStorage.setItem('chat-session', session)
+
+      const controller = new AbortController()
+      abortRef.current = controller
 
       const res = await fetch('/api/ask', {
         method: 'POST',
@@ -381,6 +423,7 @@ export function ChatFab() {
           session,
           context_path: location.pathname,
         }),
+        signal: controller.signal,
       })
 
       const reader = res.body?.getReader()
@@ -388,7 +431,7 @@ export function ChatFab() {
       let fullText = ''
 
       if (reader) {
-        setMessages(prev => [...prev, { role: 'bot', content: '' }])
+        setMessages(prev => [...prev, { role: 'bot', content: '', timestamp: Date.now() }])
         let buf = ''
         while (true) {
           const { done, value } = await reader.read()
@@ -430,10 +473,13 @@ export function ChatFab() {
         }
       }
     } catch (e) {
-      setMessages(prev => [...prev, { role: 'bot', content: `请求失败: ${e}` }])
+      if ((e as Error).name !== 'AbortError') {
+        setMessages(prev => [...prev, { role: 'bot', content: `请求失败: ${e}`, timestamp: Date.now() }])
+      }
     } finally {
       setLoading(false)
       setToolHint('')
+      abortRef.current = null
     }
   }
 
@@ -518,20 +564,31 @@ export function ChatFab() {
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
             className={`fixed z-50 bg-[var(--color-bg)] border shadow-2xl flex flex-col
-              max-sm:inset-0 max-sm:rounded-none
-              sm:bottom-6 sm:right-6 sm:w-[380px] sm:h-[520px] sm:rounded-xl sm:max-h-[80vh]
+              max-sm:inset-0 max-sm:rounded-none max-sm:border-0
+              sm:bottom-6 sm:right-6 sm:w-[400px] sm:h-[560px] sm:rounded-xl sm:max-h-[80vh]
               ${dragging ? 'border-[var(--color-accent)] border-2' : 'border-[var(--color-border)]'}`}
           >
             {/* 头部 */}
             <div className="h-11 flex items-center justify-between px-4 border-b border-[var(--color-border)] flex-shrink-0">
               <span className="text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wide">AI 助手</span>
-              <button
-                onClick={() => setOpen(false)}
-                className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-                aria-label="关闭"
-              >
-                <X size={14} weight="bold" />
-              </button>
+              <div className="flex items-center gap-1">
+                {messages.length > 0 && (
+                  <button
+                    onClick={clearChat}
+                    className="text-[10px] text-[var(--color-dim)] hover:text-[var(--color-fg)] px-2 py-1 rounded hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+                    title="清除对话"
+                  >
+                    清除
+                  </button>
+                )}
+                <button
+                  onClick={() => setOpen(false)}
+                  className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+                  aria-label="关闭"
+                >
+                  <X size={14} weight="bold" />
+                </button>
+              </div>
             </div>
 
             {/* 拖拽提示 */}
@@ -549,18 +606,18 @@ export function ChatFab() {
                 </div>
               )}
               {messages.map((msg, i) => (
-                <div key={i}>
+                <div key={i} className="group">
                   {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
                     <div className="flex flex-wrap gap-1 justify-end mb-1">
                       {msg.attachments.map((att, j) => (
                         att.type === 'image'
-                          ? <img key={j} src={att.path} alt={att.name} className="max-w-[120px] max-h-[80px] rounded object-cover" />
+                          ? <img key={j} src={att.path} alt={att.name} className="max-w-[120px] max-h-[80px] rounded object-cover cursor-pointer" onClick={() => setLightboxSrc(att.path)} />
                           : <span key={j} className="text-[11px] bg-[var(--color-surface)] text-[var(--color-muted)] px-2 py-0.5 rounded">📎 {att.name}</span>
                       ))}
                     </div>
                   )}
                   <div
-                    className={`text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl
+                    className={`text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl relative
                       ${msg.role === 'user'
                         ? 'ml-auto max-w-[80%] bg-[var(--color-accent)] text-white whitespace-pre-wrap rounded-br-sm'
                         : 'mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm'
@@ -576,6 +633,12 @@ export function ChatFab() {
                       <div dangerouslySetInnerHTML={{ __html: renderUserMessage(msg.content) }} />
                     )}
                   </div>
+                  {/* 时间戳 hover 显示 */}
+                  {msg.timestamp && (
+                    <div className={`text-[10px] text-[var(--color-dim)] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${msg.role === 'user' ? 'text-right mr-1' : 'ml-1'}`}>
+                      {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                    </div>
+                  )}
                   {msg.role === 'bot' && loading && i === messages.length - 1 && toolHint && (
                     <div className="text-[11px] text-[var(--color-dim)] mt-1 ml-1 flex items-center gap-1">
                       <span className="animate-spin inline-block w-3 h-3 border border-[var(--color-dim)] border-t-transparent rounded-full"></span>
@@ -586,6 +649,25 @@ export function ChatFab() {
               ))}
               <div ref={messagesEnd} />
             </div>
+
+            {/* 停止生成按钮 */}
+            {loading && (
+              <div className="flex justify-center py-1.5 border-t border-[var(--color-border)]">
+                <button
+                  onClick={stopGeneration}
+                  className="text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)] px-3 py-1 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+                >
+                  ■ 停止生成
+                </button>
+              </div>
+            )}
+
+            {/* 上下文提示 */}
+            {!loading && location.pathname !== '/notes' && (
+              <div className="px-3 py-1 text-[10px] text-[var(--color-dim)] truncate border-t border-[var(--color-border)]">
+                📍 {decodeURIComponent(location.pathname.replace(/^\/notes\/?/, '') || '根目录')}
+              </div>
+            )}
 
             {/* 输入区 */}
             <div className="border-t border-[var(--color-border)] p-2">
@@ -632,6 +714,25 @@ export function ChatFab() {
               </div>
             </div>
 
+          </motion.div>
+        )}
+      </AnimatePresence>
+      {/* 图片放大 Lightbox */}
+      <AnimatePresence>
+        {lightboxSrc && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: reducedMotion ? 0 : 0.15 }}
+            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 cursor-pointer p-4"
+            onClick={() => setLightboxSrc(null)}
+          >
+            <img
+              src={lightboxSrc}
+              className="max-w-full max-h-full rounded-lg object-contain"
+              alt="放大预览"
+            />
           </motion.div>
         )}
       </AnimatePresence>
