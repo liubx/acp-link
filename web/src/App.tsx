@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Sun, Moon, CircleHalf, ArrowClockwise, Browser, ArrowLeft } from '@phosphor-icons/react'
+import { Sun, Moon, CircleHalf, ArrowClockwise, Browser } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
 import { FileList } from './components/FileList'
 import { FileViewer } from './components/FileViewer'
@@ -172,22 +172,7 @@ export function App() {
       {/* 顶部导航 */}
       <header className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
-          <div className="flex items-center gap-1 min-w-0">
-            {currentPath && (
-              <button
-                onClick={() => {
-                  const parent = currentPath.split('/').slice(0, -1).join('/')
-                  navigate(parent, 'back')
-                }}
-                className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer flex-shrink-0"
-                aria-label="返回"
-                title="返回上级"
-              >
-                <ArrowLeft size={16} />
-              </button>
-            )}
-            <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
-          </div>
+          <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
           <div className="flex items-center gap-1.5">
             {isFile && fileInfo && (
               <button
@@ -251,12 +236,19 @@ export function App() {
                 </div>
               </div>
             ) : isFile ? (
-              <FileViewer fileInfo={fileInfo} />
+              <FileViewer fileInfo={fileInfo} onBack={currentPath ? () => {
+                const parent = currentPath.split('/').slice(0, -1).join('/')
+                navigate(parent, 'back')
+              } : undefined} />
             ) : isDirectory && fileInfo?.entries ? (
               <FileList
                 entries={fileInfo.entries}
                 currentPath={currentPath}
                 onNavigate={navigate}
+                onBack={currentPath ? () => {
+                  const parent = currentPath.split('/').slice(0, -1).join('/')
+                  navigate(parent, 'back')
+                } : undefined}
               />
             ) : (
               <div className="max-w-3xl mx-auto px-4 sm:px-6 py-12 text-center text-[var(--color-muted)]">

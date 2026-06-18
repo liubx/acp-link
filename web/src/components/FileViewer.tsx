@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Copy, Check } from '@phosphor-icons/react'
+import { Copy, Check, CaretLeft } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
@@ -41,9 +41,10 @@ function parseFrontmatter(content: string): { meta: Record<string, string> | nul
 
 interface Props {
   fileInfo: FileInfo | null
+  onBack?: () => void
 }
 
-export function FileViewer({ fileInfo }: Props) {
+export function FileViewer({ fileInfo, onBack }: Props) {
   const reducedMotion = useReducedMotion()
 
   if (!fileInfo) {
@@ -76,9 +77,20 @@ export function FileViewer({ fileInfo }: Props) {
       className="max-w-3xl mx-auto px-4 sm:px-6 py-4"
     >
       {/* 文件名 */}
-      <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)] mb-4">
-        {fileName}
-      </h1>
+      <div className="flex items-center gap-2 mb-4">
+        {onBack && (
+          <button
+            onClick={onBack}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer flex-shrink-0"
+            aria-label="返回"
+          >
+            <CaretLeft size={18} weight="bold" />
+          </button>
+        )}
+        <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)]">
+          {fileName}
+        </h1>
+      </div>
 
       {/* 内容区 */}
       {isBinary ? (

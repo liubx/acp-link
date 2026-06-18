@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { FolderSimple, FileText, FileCode, Image, File } from '@phosphor-icons/react'
+import { FolderSimple, FileText, FileCode, Image, File, CaretLeft } from '@phosphor-icons/react'
 import type { FileEntry } from '../App'
 
 // 可在 SPA 内预览的文件扩展名
@@ -64,9 +64,10 @@ interface Props {
   entries: FileEntry[]
   currentPath: string
   onNavigate: (path: string, direction: 'forward' | 'back') => void
+  onBack?: () => void
 }
 
-export function FileList({ entries, currentPath, onNavigate }: Props) {
+export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<string | null>(null)
   const [previewPos, setPreviewPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -125,6 +126,20 @@ export function FileList({ entries, currentPath, onNavigate }: Props) {
 
   return (
     <div className="max-w-3xl mx-auto px-4 sm:px-6 py-4">
+      {onBack && currentPath && (
+        <div className="flex items-center gap-2 mb-3">
+          <button
+            onClick={onBack}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer flex-shrink-0"
+            aria-label="返回"
+          >
+            <CaretLeft size={18} weight="bold" />
+          </button>
+          <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
+            {currentPath.split('/').pop()}
+          </span>
+        </div>
+      )}
       <div className="divide-y divide-[var(--color-border)]">
         {sorted.map(entry => (
           <button
