@@ -1,7 +1,12 @@
-import { useState, useRef, useEffect, useMemo } from 'react'
+import { useState, useRef, useEffect, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { MagnifyingGlass, FolderSimple, FileText } from '@phosphor-icons/react'
-import type { FileEntry } from '../App'
+
+interface SearchResult {
+  name: string
+  path: string
+  is_dir: boolean
+}
 
 interface Props {
   open: boolean
@@ -10,47 +15,54 @@ interface Props {
   onNavigate: (path: string) => void
 }
 
-export function SearchModal({ open, onClose, currentPath, onNavigate }: Props) {
+export function SearchModal({ open, onClose, onNavigate }: Props) {
   const [query, setQuery] = useState('')
   const [selectedIndex, setSelectedIndex] = useState(0)
-  const [entries, setEntries] = useState<FileEntry[]>([])
+  const [results, setResults] = useState<SearchResult[]>([])
+  const [loading, setLoading] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
+  const abortRef = useRef<AbortController | null>(null)
   const reducedMotion = useReducedMotion()
 
-  // 打开时获取当前目录（或父目录）的文件列表
+  // 打开时重置状态
   useEffect(() => {
     if (!open) return
     setQuery('')
     setSelectedIndex(0)
+    setResults([])
     setTimeout(() => inputRef.current?.focus(), 50)
+  }, [open])
 
-    // 取当前路径的父目录（如果当前是文件的话）
-    const dirPath = currentPath.includes('.')
-      ? currentPath.split('/').slice(0, -1).join('/')
-      : currentPath
-    const encodedPath = dirPath
-      ? '/' + dirPath.split('/').map(s => encodeURIComponent(s)).join('/')
-      : ''
+  // 防抖搜索
+  const doSearch = useCallback((q: string) => {
+    if (abortRef.current) abortRef.current.abort()
+    if (!q.trim()) {
+      setResults([])
+      setLoading(false)
+      return
+    }
+    setLoading(true)
+    const ctrl = new AbortController()
+    abortRef.current = ctrl
 
-    fetch(`/api/files${encodedPath}`)
+    fetch(`/api/search?q=${encodeURIComponent(q)}`, { signal: ctrl.signal })
       .then(r => r.json())
       .then(data => {
-        if (data?.entries) setEntries(data.entries)
+        if (!ctrl.signal.aborted) {
+          setResults(data.results || [])
+          setSelectedIndex(0)
+        }
       })
       .catch(() => {})
-  }, [open, currentPath])
+      .finally(() => {
+        if (!ctrl.signal.aborted) setLoading(false)
+      })
+  }, [])
 
-  // 过滤结果
-  const results = useMemo(() => {
-    if (!query.trim()) return entries
-    const q = query.toLowerCase()
-    return entries.filter(e => e.name.toLowerCase().includes(q))
-  }, [entries, query])
-
-  // 重置选中索引
   useEffect(() => {
-    setSelectedIndex(0)
-  }, [results])
+    const timer = setTimeout(() => doSearch(query), 200)
+    return () => clearTimeout(timer)
+  }, [query, doSearch])
 
   // 键盘导航
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -63,15 +75,15 @@ export function SearchModal({ open, onClose, currentPath, onNavigate }: Props) {
       e.preventDefault()
       setSelectedIndex(i => Math.max(i - 1, 0))
     } else if (e.key === 'Enter' && results[selectedIndex]) {
-      const entry = results[selectedIndex]
-      // 构建完整路径
-      const dirPath = currentPath.includes('.')
-        ? currentPath.split('/').slice(0, -1).join('/')
-        : currentPath
-      const fullPath = dirPath ? `${dirPath}/${entry.name}` : entry.name
-      onNavigate(fullPath)
+      onNavigate(results[selectedIndex].path)
     }
   }
+
+  // 滚动选中项到可见区域
+  useEffect(() => {
+    const el = document.querySelector(`[data-search-index="${selectedIndex}"]`)
+    el?.scrollIntoView({ block: 'nearest' })
+  }, [selectedIndex])
 
   if (!open) return null
 
@@ -101,43 +113,48 @@ export function SearchModal({ open, onClose, currentPath, onNavigate }: Props) {
                 value={query}
                 onChange={e => setQuery(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="搜索文件..."
+                placeholder="全局搜索文件..."
                 className="flex-1 bg-transparent text-sm text-[var(--color-fg)] placeholder:text-[var(--color-dim)] outline-none"
               />
+              {loading && (
+                <div className="w-4 h-4 border-2 border-[var(--color-dim)] border-t-[var(--color-accent)] rounded-full animate-spin" />
+              )}
               <kbd className="text-[10px] text-[var(--color-dim)] font-mono px-1.5 py-0.5 rounded border border-[var(--color-border)]">ESC</kbd>
             </div>
 
             <div className="max-h-[300px] overflow-y-auto py-2">
-              {results.length === 0 ? (
+              {!query.trim() ? (
+                <div className="px-4 py-6 text-center text-xs text-[var(--color-dim)]">
+                  输入关键词搜索笔记
+                </div>
+              ) : results.length === 0 && !loading ? (
                 <div className="px-4 py-6 text-center text-xs text-[var(--color-dim)]">
                   无匹配结果
                 </div>
               ) : (
-                results.slice(0, 20).map((entry, i) => {
-                  const dirPath = currentPath.includes('.')
-                    ? currentPath.split('/').slice(0, -1).join('/')
-                    : currentPath
-                  const fullPath = dirPath ? `${dirPath}/${entry.name}` : entry.name
-                  return (
-                    <button
-                      key={entry.name}
-                      onClick={() => onNavigate(fullPath)}
-                      onMouseEnter={() => setSelectedIndex(i)}
-                      className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors ${
-                        i === selectedIndex
-                          ? 'bg-[var(--color-accent-dim)] text-[var(--color-fg)]'
-                          : 'text-[var(--color-muted)] hover:bg-[var(--color-accent-dim)]'
-                      }`}
-                    >
-                      {entry.is_dir ? (
-                        <FolderSimple size={16} weight="fill" className="text-[var(--color-accent)] flex-shrink-0" />
-                      ) : (
-                        <FileText size={16} className="flex-shrink-0" />
-                      )}
-                      <span className="text-sm font-mono truncate">{entry.name}</span>
-                    </button>
-                  )
-                })
+                results.map((entry, i) => (
+                  <button
+                    key={entry.path}
+                    data-search-index={i}
+                    onClick={() => onNavigate(entry.path)}
+                    onMouseEnter={() => setSelectedIndex(i)}
+                    className={`w-full flex items-center gap-3 px-4 py-2.5 text-left cursor-pointer transition-colors ${
+                      i === selectedIndex
+                        ? 'bg-[var(--color-accent-dim)] text-[var(--color-fg)]'
+                        : 'text-[var(--color-muted)] hover:bg-[var(--color-accent-dim)]'
+                    }`}
+                  >
+                    {entry.is_dir ? (
+                      <FolderSimple size={16} weight="fill" className="text-[var(--color-accent)] flex-shrink-0" />
+                    ) : (
+                      <FileText size={16} className="flex-shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <span className="text-sm font-mono truncate block">{entry.name}</span>
+                      <span className="text-[11px] text-[var(--color-dim)] truncate block">{entry.path}</span>
+                    </div>
+                  </button>
+                ))
               )}
             </div>
           </motion.div>
