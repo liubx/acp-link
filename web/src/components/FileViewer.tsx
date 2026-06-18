@@ -149,8 +149,13 @@ export function FileViewer({ fileInfo, onBack }: Props) {
             <CopyButton text={fileInfo.content} />
           </div>
           <div className="overflow-x-auto">
-            <pre className="px-4 py-3 text-[13px] leading-relaxed font-mono text-[var(--color-fg)]">
-              <code>{addLineNumbers(fileInfo.content)}</code>
+            <pre className="px-0 py-3 text-[13px] leading-relaxed font-mono">
+              <code>{fileInfo.content.split('\n').map((line, i) => (
+                <div key={i} className="flex hover:bg-[var(--color-bg)] transition-colors">
+                  <span className="select-none text-[var(--color-dim)] text-right w-10 pr-4 flex-shrink-0">{i + 1}</span>
+                  <span className="text-[var(--color-fg)] flex-1">{line || ' '}</span>
+                </div>
+              ))}</code>
             </pre>
           </div>
         </div>

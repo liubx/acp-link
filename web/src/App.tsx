@@ -224,14 +224,17 @@ export function App() {
             initial="enter"
             animate="center"
             exit="exit"
-            transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.4, 0, 0.2, 1] }}
+            transition={{ duration: reducedMotion ? 0 : 0.15, ease: [0.4, 0, 0.2, 1] }}
             className="w-full"
           >
             {loading && !fileInfo ? (
               <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12">
-                <div className="space-y-3">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="h-11 rounded-lg bg-[var(--color-surface)] animate-pulse" />
+                <div className="space-y-2">
+                  {[...Array(8)].map((_, i) => (
+                    <div key={i} className="flex items-center gap-3 px-3 py-2.5">
+                      <div className="w-[18px] h-[18px] rounded bg-[var(--color-surface)] animate-pulse" />
+                      <div className="h-4 rounded bg-[var(--color-surface)] animate-pulse" style={{ width: `${120 + Math.random() * 150}px` }} />
+                    </div>
                   ))}
                 </div>
               </div>

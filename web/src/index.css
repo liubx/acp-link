@@ -329,8 +329,10 @@ body {
 
 .markdown-body h1 { font-size: 1.6em; padding-bottom: 0.3em; border-bottom: 1px solid var(--color-border); }
 .markdown-body h2 { font-size: 1.3em; padding-bottom: 0.2em; border-bottom: 1px solid var(--color-border); }
-.markdown-body h3 { font-size: 1.1em; }
+.markdown-body h3 { font-size: 1.15em; }
 .markdown-body h4 { font-size: 1em; color: var(--color-muted); }
+.markdown-body h5 { font-size: 0.9em; color: var(--color-muted); }
+.markdown-body h6 { font-size: 0.85em; color: var(--color-dim); }
 
 .markdown-body h1:first-child,
 .markdown-body h2:first-child { margin-top: 0; }
@@ -444,6 +446,15 @@ body {
 .markdown-body input[type="checkbox"] {
   margin-right: 6px;
   accent-color: var(--color-accent);
+  width: 14px;
+  height: 14px;
+  vertical-align: middle;
+  cursor: default;
+}
+
+.markdown-body li:has(input[type="checkbox"]) {
+  list-style: none;
+  margin-left: -1.5em;
 }
 
 .markdown-body del {

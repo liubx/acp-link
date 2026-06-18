@@ -141,8 +141,15 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
         </div>
       )}
       <div className="divide-y divide-[var(--color-border)]">
-        {sorted.map(entry => (
-          <button
+        {sorted.map((entry, idx) => {
+          // 目录和文件之间加分组间距
+          const prevEntry = idx > 0 ? sorted[idx - 1] : null
+          const showDivider = prevEntry && prevEntry.is_dir && !entry.is_dir
+
+          return (
+            <div key={entry.name}>
+              {showDivider && <div className="h-px bg-[var(--color-border)] my-1" />}
+              <button
             key={entry.name}
             onClick={() => {
               const ext = getExtension(entry.name)
@@ -158,7 +165,7 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
             }}
             onMouseEnter={(e) => handleMouseEnter(entry, e)}
             onMouseLeave={handleMouseLeave}
-            className="w-full flex items-center gap-3 px-3 py-3 sm:py-2.5 text-left hover:bg-[var(--color-surface)] rounded-lg transition-colors cursor-pointer group min-h-[44px]"
+            className="w-full flex items-center gap-3 px-3 py-3 sm:py-2.5 text-left hover:bg-[var(--color-surface)] rounded-lg transition-all cursor-pointer group min-h-[44px] border-l-2 border-transparent hover:border-[var(--color-accent)]"
           >
             {getFileIcon(entry)}
             <span className="text-sm font-mono text-[var(--color-fg)] group-hover:text-[var(--color-accent)] transition-colors truncate">
@@ -168,7 +175,9 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
               <span className="ml-auto text-[var(--color-dim)] text-xs">→</span>
             )}
           </button>
-        ))}
+            </div>
+          )
+        })}
 
         {sorted.length === 0 && (
           <div className="py-12 text-center text-sm text-[var(--color-dim)]">

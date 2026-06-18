@@ -87,6 +87,13 @@ export function SearchModal({ open, onClose, onNavigate }: Props) {
 
   if (!open) return null
 
+  // 高亮匹配文字
+  function highlightMatch(text: string, q: string): string {
+    if (!q.trim()) return text
+    const escaped = q.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+    return text.replace(new RegExp(`(${escaped})`, 'gi'), '<mark style="background:var(--color-accent-dim);color:var(--color-accent);border-radius:2px;padding:0 1px">$1</mark>')
+  }
+
   return (
     <AnimatePresence>
       {open && (
@@ -150,7 +157,7 @@ export function SearchModal({ open, onClose, onNavigate }: Props) {
                       <FileText size={16} className="flex-shrink-0" />
                     )}
                     <div className="flex-1 min-w-0">
-                      <span className="text-sm font-mono truncate block">{entry.name}</span>
+                      <span className="text-sm font-mono truncate block" dangerouslySetInnerHTML={{ __html: highlightMatch(entry.name, query) }} />
                       <span className="text-[11px] text-[var(--color-dim)] truncate block">{entry.path}</span>
                     </div>
                   </button>
