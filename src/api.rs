@@ -196,9 +196,16 @@ fn serve_or_redirect(root: &PathBuf, path: &str) -> Response {
         .first_or_octet_stream()
         .to_string();
 
+    // 文本类型加 charset=utf-8 防止中文乱码
+    let content_type = if mime.starts_with("text/") {
+        format!("{}; charset=utf-8", mime)
+    } else {
+        mime
+    };
+
     Response::builder()
         .status(StatusCode::OK)
-        .header("content-type", mime)
+        .header("content-type", content_type)
         .header("access-control-allow-origin", "*")
         .body(Body::from(data))
         .unwrap()
