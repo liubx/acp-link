@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Copy, Check, CaretLeft, FileText, FileCode, Image as ImageIcon, FilePdf, MusicNote, VideoCamera } from '@phosphor-icons/react'
+import { Copy, Check, CaretLeft } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
@@ -87,7 +87,6 @@ export function FileViewer({ fileInfo, onBack }: Props) {
             <CaretLeft size={18} weight="bold" />
           </button>
         )}
-        <FileTypeIcon isMarkdown={isMarkdown} isImage={isImage} isPdf={isPdf} isAudio={isAudio} isVideo={isVideo} isCode={isCode} />
         <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)]">
           {fileName}
         </h1>
@@ -298,20 +297,6 @@ function MarkdownContent({ content, filePath }: { content: string; filePath: str
       </ReactMarkdown>
     </article>
   )
-}
-
-// 文件类型图标
-function FileTypeIcon({ isMarkdown, isImage, isPdf, isAudio, isVideo, isCode }: {
-  isMarkdown: boolean; isImage: boolean; isPdf: boolean; isAudio: boolean; isVideo: boolean; isCode: boolean
-}) {
-  const cls = "text-[var(--color-accent)] flex-shrink-0"
-  if (isMarkdown) return <FileText size={20} className={cls} />
-  if (isImage) return <ImageIcon size={20} className={cls} />
-  if (isPdf) return <FilePdf size={20} className={cls} />
-  if (isAudio) return <MusicNote size={20} className={cls} />
-  if (isVideo) return <VideoCamera size={20} className={cls} />
-  if (isCode) return <FileCode size={20} className={cls} />
-  return <FileText size={20} className={cls} />
 }
 
 // 行号辅助

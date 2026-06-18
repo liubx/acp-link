@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { FolderSimple, FileText, FileCode, Image, File, CaretLeft, House } from '@phosphor-icons/react'
+import { FolderSimple, FileText, FileCode, Image, File, CaretLeft } from '@phosphor-icons/react'
 import type { FileEntry } from '../App'
 
 // 可在 SPA 内预览的文件扩展名
@@ -136,29 +136,25 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
             >
               <CaretLeft size={18} weight="bold" />
             </button>
-            <FolderSimple size={20} weight="fill" className="text-[var(--color-accent)] flex-shrink-0" />
             <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
               {currentPath.split('/').pop()}
             </span>
           </>
         ) : (
-          <>
-            <House size={20} weight="fill" className="text-[var(--color-accent)] flex-shrink-0" />
-            <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
-              笔记
-            </span>
-          </>
+          <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
+            Notes
+          </span>
         )}
       </div>
       <div className="divide-y divide-[var(--color-border)]">
         {sorted.map((entry, idx) => {
           // 目录和文件之间加分组间距
           const prevEntry = idx > 0 ? sorted[idx - 1] : null
-          const showDivider = prevEntry && prevEntry.is_dir && !entry.is_dir
+          const showGap = prevEntry && prevEntry.is_dir && !entry.is_dir
 
           return (
             <div key={entry.name}>
-              {showDivider && <div className="h-px bg-[var(--color-border)] my-1" />}
+              {showGap && <div className="h-2" />}
               <button
             key={entry.name}
             onClick={() => {
