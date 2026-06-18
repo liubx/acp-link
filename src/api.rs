@@ -91,6 +91,7 @@ impl tower::Service<Request> for NotesService {
     fn call(&mut self, req: Request) -> Self::Future {
         let root = self.root.clone();
         let path = req.uri().path().to_string();
+        let range_header = req.headers().get("range").and_then(|v| v.to_str().ok()).map(|s| s.to_string());
 
         Box::pin(async move {
             // 优先处理 SPA 路由（assets、/notes/...、根路径）
@@ -98,7 +99,7 @@ impl tower::Service<Request> for NotesService {
                 return Ok(resp);
             }
             // 其他路径：目录重定向到 /notes/...，文件直接下载
-            Ok(serve_or_redirect(&root, &path))
+            Ok(serve_or_redirect(&root, &path, range_header.as_deref()))
         })
     }
 }
@@ -148,8 +149,8 @@ fn serve_spa_file(path: &str) -> Option<Response> {
     None
 }
 
-/// 目录重定向到 /notes/{path}，文件直接返回供下载/查看
-fn serve_or_redirect(root: &PathBuf, path: &str) -> Response {
+/// 目录重定向到 /notes/{path}，文件直接返回供下载/查看（支持 Range 请求）
+fn serve_or_redirect(root: &PathBuf, path: &str, range: Option<&str>) -> Response {
     let decoded = urlencoding::decode(path.trim_start_matches('/')).unwrap_or_default();
     let relative = decoded.as_ref();
 
@@ -183,14 +184,8 @@ fn serve_or_redirect(root: &PathBuf, path: &str) -> Response {
             .unwrap();
     }
 
-    // 文件 → 直接返回
-    let data = match std::fs::read(&file_path) {
-        Ok(d) => d,
-        Err(_) => return Response::builder()
-            .status(StatusCode::INTERNAL_SERVER_ERROR)
-            .body(Body::from("Read error"))
-            .unwrap(),
-    };
+    // 获取文件大小
+    let file_len = std::fs::metadata(&file_path).map(|m| m.len()).unwrap_or(0);
 
     let mime = mime_guess::from_path(&file_path)
         .first_or_octet_stream()
@@ -203,12 +198,77 @@ fn serve_or_redirect(root: &PathBuf, path: &str) -> Response {
         mime
     };
 
+    // 处理 Range 请求
+    if let Some(range_str) = range {
+        if let Some((start, end)) = parse_range(range_str, file_len) {
+            let len = end - start + 1;
+            // 读取指定范围
+            use std::io::{Read, Seek, SeekFrom};
+            let mut file = match std::fs::File::open(&file_path) {
+                Ok(f) => f,
+                Err(_) => return Response::builder()
+                    .status(StatusCode::INTERNAL_SERVER_ERROR)
+                    .body(Body::from("Read error"))
+                    .unwrap(),
+            };
+            let _ = file.seek(SeekFrom::Start(start));
+            let mut buf = vec![0u8; len as usize];
+            let _ = file.read_exact(&mut buf);
+
+            return Response::builder()
+                .status(StatusCode::PARTIAL_CONTENT)
+                .header("content-type", &content_type)
+                .header("content-length", len.to_string())
+                .header("content-range", format!("bytes {}-{}/{}", start, end, file_len))
+                .header("accept-ranges", "bytes")
+                .header("access-control-allow-origin", "*")
+                .body(Body::from(buf))
+                .unwrap();
+        }
+    }
+
+    // 正常完整返回
+    let data = match std::fs::read(&file_path) {
+        Ok(d) => d,
+        Err(_) => return Response::builder()
+            .status(StatusCode::INTERNAL_SERVER_ERROR)
+            .body(Body::from("Read error"))
+            .unwrap(),
+    };
+
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", content_type)
+        .header("content-length", file_len.to_string())
+        .header("accept-ranges", "bytes")
         .header("access-control-allow-origin", "*")
         .body(Body::from(data))
         .unwrap()
+}
+
+/// 解析 Range 头，返回 (start, end) 字节范围
+fn parse_range(range: &str, file_len: u64) -> Option<(u64, u64)> {
+    // 格式: "bytes=start-end" 或 "bytes=start-" 或 "bytes=-suffix"
+    let s = range.strip_prefix("bytes=")?;
+    let (start_str, end_str) = s.split_once('-')?;
+
+    if start_str.is_empty() {
+        // bytes=-500 → 最后 500 字节
+        let suffix: u64 = end_str.parse().ok()?;
+        let start = file_len.saturating_sub(suffix);
+        Some((start, file_len - 1))
+    } else {
+        let start: u64 = start_str.parse().ok()?;
+        let end = if end_str.is_empty() {
+            file_len - 1
+        } else {
+            end_str.parse::<u64>().ok()?.min(file_len - 1)
+        };
+        if start > end || start >= file_len {
+            return None;
+        }
+        Some((start, end))
+    }
 }
 
 /// 解析 data URI，返回 (mime, base64_data)

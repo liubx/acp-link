@@ -3,13 +3,21 @@ import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
 import { FolderSimple, FileText, FileCode, Image, File } from '@phosphor-icons/react'
 import type { FileEntry } from '../App'
 
-// 可预览的文本文件扩展名
+// 可在 SPA 内预览的文件扩展名
 const TEXT_EXTENSIONS = new Set([
   'md', 'txt', 'json', 'yaml', 'yml', 'toml', 'rs', 'py', 'js', 'ts',
   'tsx', 'jsx', 'html', 'css', 'scss', 'sh', 'bash', 'zsh', 'fish',
   'go', 'java', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'swift', 'kt',
   'lua', 'vim', 'conf', 'ini', 'env', 'xml', 'svg', 'sql', 'graphql',
   'dockerfile', 'makefile', 'gitignore', 'lock',
+  // 图片
+  'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp',
+  // PDF
+  'pdf',
+  // 音频
+  'mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a',
+  // 视频
+  'mp4', 'webm', 'mov',
 ])
 
 // 代码文件扩展名
@@ -123,11 +131,11 @@ export function FileList({ entries, currentPath, onNavigate }: Props) {
             key={entry.name}
             onClick={() => {
               const ext = getExtension(entry.name)
-              const isPreviewable = entry.is_dir || TEXT_EXTENSIONS.has(ext) || IMAGE_EXTENSIONS.has(ext)
-              if (isPreviewable) {
+              const canPreview = entry.is_dir || TEXT_EXTENSIONS.has(ext)
+              if (canPreview) {
                 onNavigate(getEntryPath(entry.name), 'forward')
               } else {
-                // 不可预览的文件：直接下载/新标签打开
+                // 非文本文件直接跳转，让浏览器/服务器处理
                 const path = getEntryPath(entry.name)
                 const encodedPath = path.split('/').map(s => encodeURIComponent(s)).join('/')
                 window.open(`/${encodedPath}`, '_blank')
