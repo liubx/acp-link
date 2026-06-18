@@ -140,6 +140,8 @@ export function FileViewer({ fileInfo, onBack }: Props) {
         )
       ) : isMarkdown && fileInfo.content ? (
         <MarkdownContent content={fileInfo.content} filePath={fileInfo.path} />
+      ) : isCode && fileInfo.content && (ext === 'html' || ext === 'htm') ? (
+        <HtmlViewer content={fileInfo.content} />
       ) : isCode && fileInfo.content ? (
         <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)]">
           <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
@@ -164,6 +166,56 @@ export function FileViewer({ fileInfo, onBack }: Props) {
         </div>
       )}
     </motion.div>
+  )
+}
+
+// HTML 预览/代码切换组件
+function HtmlViewer({ content }: { content: string }) {
+  const [mode, setMode] = useState<'preview' | 'code'>('preview')
+
+  return (
+    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden">
+      <div className="px-4 py-2.5 bg-[var(--color-surface)] border-b border-[var(--color-border)] flex items-center justify-between">
+        <div className="flex items-center gap-1 bg-[var(--color-bg)] rounded-md p-0.5 border border-[var(--color-border)]">
+          <button
+            onClick={() => setMode('preview')}
+            className={`text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer ${
+              mode === 'preview'
+                ? 'bg-[var(--color-surface)] text-[var(--color-fg)] shadow-sm'
+                : 'text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+            }`}
+          >
+            预览
+          </button>
+          <button
+            onClick={() => setMode('code')}
+            className={`text-xs font-medium px-3 py-1.5 rounded transition-colors cursor-pointer ${
+              mode === 'code'
+                ? 'bg-[var(--color-surface)] text-[var(--color-fg)] shadow-sm'
+                : 'text-[var(--color-muted)] hover:text-[var(--color-fg)]'
+            }`}
+          >
+            代码
+          </button>
+        </div>
+        <CopyButton text={content} />
+      </div>
+      {mode === 'preview' ? (
+        <iframe
+          srcDoc={content}
+          className="w-full bg-white"
+          style={{ height: 'calc(100vh - 14rem)', border: 'none' }}
+          sandbox="allow-scripts allow-same-origin"
+          title="HTML 预览"
+        />
+      ) : (
+        <div className="overflow-x-auto bg-[var(--color-surface)]">
+          <pre className="px-4 py-3 text-[13px] leading-relaxed font-mono text-[var(--color-fg)]">
+            <code>{addLineNumbers(content)}</code>
+          </pre>
+        </div>
+      )}
+    </div>
   )
 }
 
