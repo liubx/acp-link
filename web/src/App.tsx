@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Sun, Moon, CircleHalf, ArrowClockwise, DownloadSimple } from '@phosphor-icons/react'
+import { Sun, Moon, CircleHalf, ArrowClockwise, Browser, ArrowLeft } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
 import { FileList } from './components/FileList'
 import { FileViewer } from './components/FileViewer'
@@ -61,6 +61,9 @@ export function App() {
     const isRefresh = prevPathRef.current === currentPath && refreshKey > 0
     prevPathRef.current = currentPath
 
+    // 路径变化时立即清空旧数据，避免闪烁
+    if (!isRefresh) setFileInfo(null)
+
     const fetchData = async () => {
       setLoading(true)
       try {
@@ -73,10 +76,10 @@ export function App() {
           const data = await res.json()
           setFileInfo(data)
         } else {
-          if (!isRefresh) setFileInfo(null)
+          setFileInfo(null)
         }
       } catch {
-        if (!isRefresh) setFileInfo(null)
+        setFileInfo(null)
       } finally {
         setLoading(false)
       }
@@ -91,6 +94,9 @@ export function App() {
     if (window.location.pathname !== urlPath) {
       window.history.pushState(null, '', urlPath)
     }
+    // 动态更新页面标题
+    const name = currentPath ? currentPath.split('/').pop() || 'Notes' : 'Notes'
+    document.title = name
   }, [currentPath])
 
   // 处理浏览器前进/后退
@@ -166,28 +172,34 @@ export function App() {
       {/* 顶部导航 */}
       <header className="sticky top-0 z-30 bg-[var(--color-bg)]/80 backdrop-blur-md border-b border-[var(--color-border)]">
         <div className="max-w-3xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
-          <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
+          <div className="flex items-center gap-1 min-w-0">
+            {currentPath && (
+              <button
+                onClick={() => {
+                  const parent = currentPath.split('/').slice(0, -1).join('/')
+                  navigate(parent, 'back')
+                }}
+                className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer flex-shrink-0"
+                aria-label="返回"
+                title="返回上级"
+              >
+                <ArrowLeft size={16} />
+              </button>
+            )}
+            <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
+          </div>
           <div className="flex items-center gap-1.5">
             {isFile && fileInfo && (
               <button
                 onClick={() => {
-                  const fileName = fileInfo.path.split('/').pop() || 'file'
-                  const a = document.createElement('a')
-                  if (fileInfo.content) {
-                    const blob = new Blob([fileInfo.content], { type: 'text/plain' })
-                    a.href = URL.createObjectURL(blob)
-                  } else {
-                    const encodedPath = fileInfo.path.split('/').map(s => encodeURIComponent(s)).join('/')
-                    a.href = `/${encodedPath}`
-                  }
-                  a.download = fileName
-                  a.click()
+                  const encodedPath = fileInfo.path.split('/').map(s => encodeURIComponent(s)).join('/')
+                  window.open(`/${encodedPath}`, '_blank')
                 }}
                 className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-                aria-label="下载"
-                title="下载"
+                aria-label="打开"
+                title="在新标签页打开"
               >
-                <DownloadSimple size={15} />
+                <Browser size={15} />
               </button>
             )}
             <button
@@ -221,7 +233,7 @@ export function App() {
       <main className="flex-1 relative" style={{ overflowX: 'clip' }}>
         <AnimatePresence mode="wait" custom={navDirection}>
           <motion.div
-            key={currentPath + (isFile ? '-file' : '-dir')}
+            key={currentPath}
             custom={navDirection}
             variants={slideVariants}
             initial="enter"
