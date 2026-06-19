@@ -712,14 +712,43 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
             )}
 
             {/* 输入区 */}
-            <div className="border-t border-[var(--color-border)] p-2">
-              <div className="flex items-end gap-1.5">
+            <div className="border-t border-[var(--color-border)] p-3 bg-[var(--color-surface)]">
+              <div className="relative">
+                <div
+                  ref={inputRef}
+                  contentEditable
+                  onKeyDown={handleKeyDown}
+                  onPaste={handlePaste}
+                  onInput={() => setInputEmpty(!inputRef.current?.textContent?.trim() && !inputRef.current?.querySelector('img, .file-tag'))}
+                  data-placeholder="输入消息，粘贴图片或拖拽文件..."
+                  className="w-full min-h-[44px] max-h-[180px] overflow-y-auto px-3 py-2.5 pr-10
+                    bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg
+                    text-[var(--color-fg)] text-[13px] leading-relaxed
+                    focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/20
+                    transition-all break-words"
+                  style={{ wordBreak: 'break-word' }}
+                />
+                <button
+                  onClick={send}
+                  disabled={loading || inputEmpty}
+                  className="absolute right-2 bottom-2 w-7 h-7 rounded-md bg-[var(--color-accent)] text-white
+                    flex items-center justify-center
+                    disabled:opacity-20 disabled:cursor-not-allowed
+                    hover:bg-[var(--color-accent-hover)] active:scale-[0.92]
+                    transition-all cursor-pointer"
+                  aria-label="发送"
+                >
+                  <PaperPlaneRight size={12} weight="bold" />
+                </button>
+              </div>
+              <div className="flex items-center gap-2 mt-1.5 px-0.5">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="w-8 h-8 rounded-lg flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer flex-shrink-0"
+                  className="flex items-center gap-1 text-[10px] text-[var(--color-dim)] hover:text-[var(--color-fg)] transition-colors cursor-pointer"
                   aria-label="上传文件"
                 >
-                  <Paperclip size={15} />
+                  <Paperclip size={12} />
+                  <span>附件</span>
                 </button>
                 <input
                   ref={fileInputRef}
@@ -728,32 +757,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
                   className="hidden"
                   onChange={handleFileChange}
                 />
-                <div
-                  ref={inputRef}
-                  contentEditable
-                  onKeyDown={handleKeyDown}
-                  onPaste={handlePaste}
-                  onInput={() => setInputEmpty(!inputRef.current?.textContent?.trim() && !inputRef.current?.querySelector('img, .file-tag'))}
-                  data-placeholder="输入消息，粘贴图片或拖拽文件"
-                  className="flex-1 min-h-[36px] max-h-[160px] overflow-y-auto px-3 py-2
-                    bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg
-                    text-[var(--color-fg)] text-[13px] leading-snug
-                    focus:outline-none focus:border-[var(--color-accent)]
-                    transition-colors break-words"
-                  style={{ wordBreak: 'break-word' }}
-                />
-                <button
-                  onClick={send}
-                  disabled={loading || inputEmpty}
-                  className="w-8 h-8 rounded-lg bg-[var(--color-accent)] text-white
-                    flex items-center justify-center flex-shrink-0
-                    disabled:opacity-20 disabled:cursor-not-allowed
-                    hover:bg-[var(--color-accent-hover)] active:scale-[0.92]
-                    transition-all cursor-pointer"
-                  aria-label="发送"
-                >
-                  <PaperPlaneRight size={14} weight="bold" />
-                </button>
+                <span className="text-[10px] text-[var(--color-dim)]">Enter 发送 · Shift+Enter 换行</span>
               </div>
             </div>
 
