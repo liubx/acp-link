@@ -168,9 +168,10 @@ interface Message {
   timestamp?: number
 }
 
-export function ChatFab() {
+export function ChatFab({ currentPath }: { currentPath: string }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
+  const pathRef = useRef(currentPath)
   const [loading, setLoading] = useState(false)
   const [toolHint, setToolHint] = useState('')
   const [dragging, setDragging] = useState(false)
@@ -182,18 +183,23 @@ export function ChatFab() {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
 
-  // 加载历史
+  // 路径变化时切换对话
   useEffect(() => {
-    const hist = localStorage.getItem('chat-history')
+    pathRef.current = currentPath
+    const key = `chat-history:${currentPath || '/'}`
+    const hist = localStorage.getItem(key)
     if (hist) {
-      try { setMessages(JSON.parse(hist)) } catch { /* ignore */ }
+      try { setMessages(JSON.parse(hist)) } catch { setMessages([]) }
+    } else {
+      setMessages([])
     }
-  }, [])
+  }, [currentPath])
 
-  // 保存历史
+  // 保存历史（按路径）
   useEffect(() => {
     if (messages.length > 0) {
-      localStorage.setItem('chat-history', JSON.stringify(messages.slice(-30)))
+      const key = `chat-history:${pathRef.current || '/'}`
+      localStorage.setItem(key, JSON.stringify(messages.slice(-30)))
     }
   }, [messages])
 
@@ -329,13 +335,15 @@ export function ChatFab() {
     }
   }, [])
 
-  // 清除对话（重置 session）
+  // 清除对话（重置当前路径的 session）
   const clearChat = useCallback(() => {
     setMessages([])
-    localStorage.removeItem('chat-history')
-    localStorage.removeItem('chat-session')
+    const key = `chat-history:${currentPath || '/'}`
+    const sessionKey = `chat-session:${currentPath || '/'}`
+    localStorage.removeItem(key)
+    localStorage.removeItem(sessionKey)
     setToolHint('')
-  }, [])
+  }, [currentPath])
 
   // 停止生成
   const stopGeneration = useCallback(() => {
@@ -410,8 +418,9 @@ export function ChatFab() {
     setLoading(true)
 
     try {
-      const session = localStorage.getItem('chat-session') || `web-${Math.random().toString(36).slice(2, 10)}`
-      if (!localStorage.getItem('chat-session')) localStorage.setItem('chat-session', session)
+      const sessionKey = `chat-session:${currentPath || '/'}`
+      const session = localStorage.getItem(sessionKey) || `web-${Math.random().toString(36).slice(2, 10)}`
+      if (!localStorage.getItem(sessionKey)) localStorage.setItem(sessionKey, session)
 
       const controller = new AbortController()
       abortRef.current = controller

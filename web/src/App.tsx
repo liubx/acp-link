@@ -270,7 +270,7 @@ export function App() {
       />
 
       {/* 悬浮聊天按钮 */}
-      <ChatFab />
+      <ChatFab currentPath={currentPath} />
     </div>
   )
 }
