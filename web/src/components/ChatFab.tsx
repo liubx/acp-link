@@ -616,34 +616,46 @@ export function ChatFab() {
                       ))}
                     </div>
                   )}
-                  <div
-                    className={`text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl relative
-                      ${msg.role === 'user'
-                        ? 'ml-auto max-w-[80%] bg-[var(--color-accent)] text-white whitespace-pre-wrap rounded-br-sm'
-                        : 'mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm'
-                      }`}
-                  >
-                    {msg.role === 'bot' ? (
-                      msg.content
-                        ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                        : (loading && i === messages.length - 1
-                          ? <span className="thinking-dots">思考中</span>
-                          : '')
-                    ) : (
-                      <div dangerouslySetInnerHTML={{ __html: renderUserMessage(msg.content) }} />
-                    )}
-                  </div>
-                  {/* 时间戳 hover 显示 */}
-                  {msg.timestamp && (
-                    <div className={`text-[10px] text-[var(--color-dim)] mt-0.5 opacity-0 group-hover:opacity-100 transition-opacity ${msg.role === 'user' ? 'text-right mr-1' : 'ml-1'}`}>
-                      {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                  {msg.role === 'bot' && (
+                    <div className="flex items-start gap-2">
+                      <div className="w-6 h-6 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <span className="text-[10px]">🤖</span>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl w-fit mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm">
+                          {msg.content
+                            ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                            : (loading && i === messages.length - 1
+                              ? <span className="thinking-dots">思考中</span>
+                              : '')}
+                        </div>
+                        {msg.timestamp && (
+                          <div className="text-[10px] text-[var(--color-dim)] mt-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                            {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                          </div>
+                        )}
+                        {loading && i === messages.length - 1 && toolHint && (
+                          <div className="text-[11px] text-[var(--color-dim)] mt-1 ml-1 flex items-center gap-1">
+                            <span className="animate-spin inline-block w-3 h-3 border border-[var(--color-dim)] border-t-transparent rounded-full"></span>
+                            {toolHint}
+                          </div>
+                        )}
+                      </div>
                     </div>
                   )}
-                  {msg.role === 'bot' && loading && i === messages.length - 1 && toolHint && (
-                    <div className="text-[11px] text-[var(--color-dim)] mt-1 ml-1 flex items-center gap-1">
-                      <span className="animate-spin inline-block w-3 h-3 border border-[var(--color-dim)] border-t-transparent rounded-full"></span>
-                      {toolHint}
-                    </div>
+                  {msg.role === 'user' && (
+                    <>
+                      <div
+                        className="text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl w-fit ml-auto max-w-[80%] bg-[var(--color-accent)] text-white whitespace-pre-wrap rounded-br-sm"
+                      >
+                        <div dangerouslySetInnerHTML={{ __html: renderUserMessage(msg.content) }} />
+                      </div>
+                      {msg.timestamp && (
+                        <div className="text-[10px] text-[var(--color-dim)] mt-0.5 mr-1 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                          {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      )}
+                    </>
                   )}
                 </div>
               ))}
@@ -663,9 +675,9 @@ export function ChatFab() {
             )}
 
             {/* 上下文提示 */}
-            {!loading && location.pathname !== '/notes' && (
+            {!loading && (
               <div className="px-3 py-1 text-[10px] text-[var(--color-dim)] truncate border-t border-[var(--color-border)]">
-                📍 {decodeURIComponent(location.pathname.replace(/^\/notes\/?/, '') || '根目录')}
+                📍 {decodeURIComponent(location.pathname.replace(/^\/notes\/?/, '') || '/')}
               </div>
             )}
 
