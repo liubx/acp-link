@@ -174,6 +174,7 @@ export function ChatFab() {
   const [loading, setLoading] = useState(false)
   const [toolHint, setToolHint] = useState('')
   const [dragging, setDragging] = useState(false)
+  const [inputEmpty, setInputEmpty] = useState(true)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const abortRef = useRef<AbortController | null>(null)
   const messagesEnd = useRef<HTMLDivElement>(null)
@@ -590,7 +591,7 @@ export function ChatFab() {
             )}
 
             {/* 消息区 */}
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2" onClick={handleMessageClick}>
+            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" onClick={handleMessageClick}>
               {messages.length === 0 && (
                 <div className="text-center text-xs text-[var(--color-dim)] pt-12">
                   发送消息开始对话
@@ -699,8 +700,9 @@ export function ChatFab() {
                   contentEditable
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
+                  onInput={() => setInputEmpty(!inputRef.current?.textContent?.trim() && !inputRef.current?.querySelector('img, .file-tag'))}
                   data-placeholder="输入消息，粘贴图片或拖拽文件"
-                  className="flex-1 min-h-[36px] max-h-[120px] overflow-y-auto px-3 py-2
+                  className="flex-1 min-h-[36px] max-h-[160px] overflow-y-auto px-3 py-2
                     bg-[var(--color-surface)] border border-[var(--color-border)] rounded-lg
                     text-[var(--color-fg)] text-[13px] leading-snug
                     focus:outline-none focus:border-[var(--color-accent)]
@@ -709,7 +711,7 @@ export function ChatFab() {
                 />
                 <button
                   onClick={send}
-                  disabled={loading}
+                  disabled={loading || inputEmpty}
                   className="w-8 h-8 rounded-lg bg-[var(--color-accent)] text-white
                     flex items-center justify-center flex-shrink-0
                     disabled:opacity-30 disabled:cursor-not-allowed
