@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Copy, Check, CaretLeft, FileText, FileCode, ImageSquare, FilePdf, MusicNote, VideoCamera, FileHtml } from '@phosphor-icons/react'
+import { Copy, Check, CaretLeft } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
@@ -68,17 +68,6 @@ export function FileViewer({ fileInfo, onBack }: Props) {
   const isAudio = isBinary && audioExts.has(ext.toLowerCase())
   const videoExts = new Set(['mp4', 'webm', 'mov'])
   const isVideo = isBinary && videoExts.has(ext.toLowerCase())
-  const isHtml = isCode && (ext === 'html' || ext === 'htm')
-
-  // 根据文件类型选择图标
-  const TypeIcon = isMarkdown ? FileText
-    : isHtml ? FileHtml
-    : isImage ? ImageSquare
-    : isPdf ? FilePdf
-    : isAudio ? MusicNote
-    : isVideo ? VideoCamera
-    : isCode ? FileCode
-    : FileText
 
   return (
     <motion.div
@@ -98,7 +87,6 @@ export function FileViewer({ fileInfo, onBack }: Props) {
             <CaretLeft size={18} weight="bold" />
           </button>
         )}
-        <TypeIcon size={18} className="text-[var(--color-muted)] flex-shrink-0" />
         <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)]">
           {fileName}
         </h1>
@@ -152,7 +140,7 @@ export function FileViewer({ fileInfo, onBack }: Props) {
         )
       ) : isMarkdown && fileInfo.content ? (
         <MarkdownContent content={fileInfo.content} filePath={fileInfo.path} />
-      ) : isCode && fileInfo.content && isHtml ? (
+      ) : isCode && fileInfo.content && (ext === 'html' || ext === 'htm') ? (
         <HtmlViewer content={fileInfo.content} />
       ) : isCode && fileInfo.content ? (
         <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)]">
