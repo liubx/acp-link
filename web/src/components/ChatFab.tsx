@@ -572,15 +572,6 @@ export function ChatFab() {
             <div className="h-11 flex items-center justify-between px-4 border-b border-[var(--color-border)] flex-shrink-0">
               <span className="text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wide">AI 助手</span>
               <div className="flex items-center gap-1">
-                {messages.length > 0 && (
-                  <button
-                    onClick={clearChat}
-                    className="text-[10px] text-[var(--color-dim)] hover:text-[var(--color-fg)] px-2 py-1 rounded hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-                    title="清除对话"
-                  >
-                    清除
-                  </button>
-                )}
                 <button
                   onClick={() => setOpen(false)}
                   className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
@@ -654,6 +645,16 @@ export function ChatFab() {
                   )}
                 </div>
               ))}
+              {messages.length > 0 && !loading && (
+                <div className="flex justify-center pt-2">
+                  <button
+                    onClick={clearChat}
+                    className="text-[11px] text-[var(--color-dim)] hover:text-[var(--color-accent)] transition-colors cursor-pointer"
+                  >
+                    开始新对话
+                  </button>
+                </div>
+              )}
               <div ref={messagesEnd} />
             </div>
 
