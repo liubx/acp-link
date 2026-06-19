@@ -1,6 +1,6 @@
 import { useState, useMemo } from 'react'
 import { motion, useReducedMotion } from 'motion/react'
-import { Copy, Check, CaretLeft } from '@phosphor-icons/react'
+import { Copy, Check, CaretLeft, ArrowClockwise, Browser } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import type { FileInfo } from '../App'
@@ -42,9 +42,10 @@ function parseFrontmatter(content: string): { meta: Record<string, string> | nul
 interface Props {
   fileInfo: FileInfo | null
   onBack?: () => void
+  onRefresh?: () => void
 }
 
-export function FileViewer({ fileInfo, onBack }: Props) {
+export function FileViewer({ fileInfo, onBack, onRefresh }: Props) {
   const reducedMotion = useReducedMotion()
 
   if (!fileInfo) {
@@ -87,9 +88,30 @@ export function FileViewer({ fileInfo, onBack }: Props) {
             <CaretLeft size={18} weight="bold" />
           </button>
         )}
-        <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)]">
+        <h1 className="text-lg font-mono font-semibold text-[var(--color-fg)] flex-1 truncate">
           {fileName}
         </h1>
+        <div className="flex items-center gap-1 flex-shrink-0">
+          <button
+            onClick={() => {
+              const encodedPath = fileInfo.path.split('/').map(s => encodeURIComponent(s)).join('/')
+              window.open(`/${encodedPath}`, '_blank')
+            }}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+            title="在新标签页打开"
+          >
+            <Browser size={14} />
+          </button>
+          {onRefresh && (
+            <button
+              onClick={onRefresh}
+              className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+              title="刷新"
+            >
+              <ArrowClockwise size={14} />
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 内容区 */}

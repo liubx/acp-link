@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Sun, Moon, CircleHalf, ArrowClockwise, Browser } from '@phosphor-icons/react'
+import { Sun, Moon, CircleHalf } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
 import { FileList } from './components/FileList'
 import { FileViewer } from './components/FileViewer'
@@ -190,27 +190,6 @@ export function App() {
         <div className="max-w-5xl mx-auto px-4 sm:px-6 h-12 flex items-center justify-between">
           <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
           <div className="flex items-center gap-1.5">
-            {isFile && fileInfo && (
-              <button
-                onClick={() => {
-                  const encodedPath = fileInfo.path.split('/').map(s => encodeURIComponent(s)).join('/')
-                  window.open(`/${encodedPath}`, '_blank')
-                }}
-                className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-                aria-label="打开"
-                title="在新标签页打开"
-              >
-                <Browser size={15} />
-              </button>
-            )}
-            <button
-              onClick={() => setRefreshKey(k => k + 1)}
-              className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-              aria-label="刷新"
-              title="刷新"
-            >
-              <ArrowClockwise size={15} />
-            </button>
             <button
               onClick={toggleTheme}
               className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
@@ -258,7 +237,7 @@ export function App() {
               <FileViewer fileInfo={fileInfo} onBack={currentPath ? () => {
                 const parent = currentPath.split('/').slice(0, -1).join('/')
                 navigate(parent, 'back')
-              } : undefined} />
+              } : undefined} onRefresh={() => setRefreshKey(k => k + 1)} />
             ) : isDirectory && fileInfo?.entries ? (
               <FileList
                 entries={fileInfo.entries}
@@ -268,6 +247,7 @@ export function App() {
                   const parent = currentPath.split('/').slice(0, -1).join('/')
                   navigate(parent, 'back')
                 } : undefined}
+                onRefresh={() => setRefreshKey(k => k + 1)}
               />
             ) : (
               <div className="max-w-5xl mx-auto px-4 sm:px-6 py-12 text-center text-[var(--color-muted)]">

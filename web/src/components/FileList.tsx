@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { FolderSimple, FileText, FileCode, Image, File, CaretLeft, Notebook } from '@phosphor-icons/react'
+import { FolderSimple, FileText, FileCode, Image, File, CaretLeft, Notebook, ArrowClockwise } from '@phosphor-icons/react'
 import type { FileEntry } from '../App'
 
 // 可在 SPA 内预览的文件扩展名
@@ -65,9 +65,10 @@ interface Props {
   currentPath: string
   onNavigate: (path: string, direction: 'forward' | 'back') => void
   onBack?: () => void
+  onRefresh?: () => void
 }
 
-export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
+export function FileList({ entries, currentPath, onNavigate, onBack, onRefresh }: Props) {
   const [previewPath, setPreviewPath] = useState<string | null>(null)
   const [previewContent, setPreviewContent] = useState<string | null>(null)
   const [previewPos, setPreviewPos] = useState<{ x: number; y: number }>({ x: 0, y: 0 })
@@ -136,7 +137,7 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
             >
               <CaretLeft size={18} weight="bold" />
             </button>
-            <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
+            <span className="text-lg font-mono font-semibold text-[var(--color-fg)] flex-1 truncate">
               {currentPath.split('/').pop()}
             </span>
           </>
@@ -145,10 +146,19 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
             <div className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] flex-shrink-0">
               <Notebook size={18} weight="bold" />
             </div>
-            <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
+            <span className="text-lg font-mono font-semibold text-[var(--color-fg)] flex-1 truncate">
               Notes
             </span>
           </>
+        )}
+        {onRefresh && (
+          <button
+            onClick={onRefresh}
+            className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer flex-shrink-0"
+            title="刷新"
+          >
+            <ArrowClockwise size={14} />
+          </button>
         )}
       </div>
       <div className="divide-y divide-[var(--color-border)]">
