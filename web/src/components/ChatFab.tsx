@@ -306,6 +306,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
           } else {
             inputRef.current.appendChild(img)
           }
+          setInputEmpty(false)
         }
         return
       }
@@ -315,6 +316,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
     const text = e.clipboardData.getData('text/plain')
     if (text) {
       document.execCommand('insertText', false, text)
+      setInputEmpty(false)
     }
   }, [uploadFile])
 
@@ -342,6 +344,8 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
           inputRef.current.appendChild(span)
           inputRef.current.appendChild(document.createTextNode('\u00A0'))
         }
+        // 更新输入状态（DOM 编程修改不触发 onInput）
+        setInputEmpty(false)
       }
     }
     e.target.value = ''
@@ -565,6 +569,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
           inputRef.current.appendChild(span)
           inputRef.current.appendChild(document.createTextNode('\u00A0'))
         }
+        setInputEmpty(false)
       }
     }
   }, [uploadFile])
