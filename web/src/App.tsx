@@ -94,9 +94,25 @@ export function App() {
     if (window.location.pathname !== urlPath) {
       window.history.pushState(null, '', urlPath)
     }
-    // 动态更新页面标题
+    // 动态更新页面标题和图标
     const name = currentPath ? currentPath.split('/').pop() || 'Notes' : 'Notes'
     document.title = name
+
+    // 根据类型切换 favicon
+    const ext = name.includes('.') ? name.split('.').pop()?.toLowerCase() || '' : ''
+    let emoji = '📝' // 默认
+    if (!currentPath || !name.includes('.')) emoji = '📁' // 目录
+    else if (ext === 'md') emoji = '📄'
+    else if (['html', 'htm'].includes(ext)) emoji = '🌐'
+    else if (['png', 'jpg', 'jpeg', 'gif', 'webp', 'svg', 'bmp'].includes(ext)) emoji = '🖼️'
+    else if (ext === 'pdf') emoji = '📕'
+    else if (['mp3', 'wav', 'ogg', 'flac', 'aac', 'm4a'].includes(ext)) emoji = '🎵'
+    else if (['mp4', 'webm', 'mov'].includes(ext)) emoji = '🎬'
+    else if (['rs', 'py', 'js', 'ts', 'tsx', 'jsx', 'go', 'java', 'c', 'cpp', 'sh'].includes(ext)) emoji = '💻'
+    else if (['json', 'yaml', 'yml', 'toml', 'xml'].includes(ext)) emoji = '⚙️'
+
+    const link = document.querySelector("link[rel='icon']") as HTMLLinkElement
+    if (link) link.href = `data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>${emoji}</text></svg>`
   }, [currentPath])
 
   // 处理浏览器前进/后退
