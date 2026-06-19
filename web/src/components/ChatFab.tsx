@@ -617,31 +617,26 @@ export function ChatFab() {
                     </div>
                   )}
                   {msg.role === 'bot' && (
-                    <div className="flex items-start gap-2">
-                      <div className="w-6 h-6 rounded-full bg-[var(--color-surface)] border border-[var(--color-border)] flex items-center justify-center flex-shrink-0 mt-0.5">
-                        <span className="text-[10px]">🤖</span>
+                    <>
+                      <div className="text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl w-fit mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm">
+                        {msg.content
+                          ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
+                          : (loading && i === messages.length - 1
+                            ? <span className="thinking-dots">思考中</span>
+                            : '')}
                       </div>
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl w-fit mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm">
-                          {msg.content
-                            ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                            : (loading && i === messages.length - 1
-                              ? <span className="thinking-dots">思考中</span>
-                              : '')}
+                      {msg.timestamp && (
+                        <div className="text-[10px] text-[var(--color-dim)] mt-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                          {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
                         </div>
-                        {msg.timestamp && (
-                          <div className="text-[10px] text-[var(--color-dim)] mt-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                            {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                          </div>
-                        )}
-                        {loading && i === messages.length - 1 && toolHint && (
-                          <div className="text-[11px] text-[var(--color-dim)] mt-1 ml-1 flex items-center gap-1">
-                            <span className="animate-spin inline-block w-3 h-3 border border-[var(--color-dim)] border-t-transparent rounded-full"></span>
-                            {toolHint}
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                      )}
+                      {loading && i === messages.length - 1 && toolHint && (
+                        <div className="text-[11px] text-[var(--color-dim)] mt-1 ml-1 flex items-center gap-1">
+                          <span className="animate-spin inline-block w-3 h-3 border border-[var(--color-dim)] border-t-transparent rounded-full"></span>
+                          {toolHint}
+                        </div>
+                      )}
+                    </>
                   )}
                   {msg.role === 'user' && (
                     <>
@@ -677,7 +672,7 @@ export function ChatFab() {
             {/* 上下文提示 */}
             {!loading && (
               <div className="px-3 py-1 text-[10px] text-[var(--color-dim)] truncate border-t border-[var(--color-border)]">
-                📍 {decodeURIComponent(location.pathname.replace(/^\/notes\/?/, '') || '/')}
+                📍 {decodeURIComponent(location.pathname.replace(/^\/notes\/?/, '')) || 'Notes'}
               </div>
             )}
 
