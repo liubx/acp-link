@@ -140,16 +140,42 @@ function escapeHtml(text: string): string {
     .replace(/"/g, '&quot;')
 }
 
-// 用户消息渲染：只处理图片和文件链接，文本保持原样
+// 用户消息渲染：按原始顺序混排图片、文件、文字
 function renderUserMessage(text: string): string {
   if (!text) return ''
-  let html = escapeHtml(text)
-  // 图片 ![name](url) → <img>
-  html = html.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" style="max-width:100%;border-radius:8px;margin:4px 0;display:block" />')
-  // 文件链接 [📎 name](url) → 链接
-  html = html.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="color:inherit;text-decoration:underline">$1</a>')
-  // 换行
-  html = html.replace(/\n/g, '<br/>')
+  
+  // 按行处理，保持原始顺序
+  const lines = text.split('\n')
+  let html = ''
+  
+  for (const line of lines) {
+    // 图片行
+    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)\s*$/)
+    if (imgMatch) {
+      html += `<img src="${escapeHtml(imgMatch[2])}" alt="${escapeHtml(imgMatch[1])}" class="chat-img" style="max-width:200px;max-height:140px;border-radius:6px;margin:3px 0;display:block;object-fit:cover;border:1px solid rgba(255,255,255,0.15);cursor:pointer" />`
+      continue
+    }
+    
+    // 文件行
+    const fileMatch = line.match(/^\[([^\]]+)\]\(([^)]+)\)\s*$/)
+    if (fileMatch) {
+      html += `<a href="${escapeHtml(fileMatch[2])}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.15);padding:3px 8px;border-radius:6px;font-size:11px;text-decoration:none;color:inherit;margin:2px 0">📎 ${escapeHtml(fileMatch[1])}</a><br/>`
+      continue
+    }
+    
+    // 混合行（行内有图片或链接）
+    let processed = escapeHtml(line)
+    // 行内图片
+    processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" class="chat-img" style="max-width:120px;max-height:80px;border-radius:4px;vertical-align:middle;margin:0 2px;cursor:pointer" />')
+    // 行内文件
+    processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="background:rgba(255,255,255,0.15);padding:1px 6px;border-radius:4px;font-size:11px;text-decoration:none;color:inherit">📎 $1</a>')
+    
+    html += processed + '<br/>'
+  }
+  
+  // 去掉末尾多余的 br
+  html = html.replace(/(<br\/>)+$/, '')
+  
   return html
 }
 
@@ -166,6 +192,12 @@ interface Message {
   content: string
   attachments?: Attachment[]
   timestamp?: number
+}
+
+interface ChatBlock {
+  type: string
+  content: string
+  name?: string
 }
 
 export function ChatFab({ currentPath }: { currentPath: string }) {
@@ -359,7 +391,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
   const extractBlocks = useCallback(() => {
     const el = inputRef.current
     if (!el) return { blocks: [] as { type: string; content: string }[], displayHtml: '' }
-    const blocks: { type: string; content: string }[] = []
+    const blocks: ChatBlock[] = []
     let currentText = ''
 
     const flush = () => {
@@ -367,7 +399,6 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
       if (t) blocks.push({ type: 'text', content: t })
       currentText = ''
     }
-
     const walk = (node: Node) => {
       if (node.nodeType === 3) {
         currentText += node.textContent || ''
@@ -380,7 +411,8 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
       } else if ((node as HTMLElement).classList?.contains('file-tag')) {
         flush()
         const path = (node as HTMLElement).getAttribute('data-path') || ''
-        if (path) blocks.push({ type: 'file', content: path })
+        const name = (node as HTMLElement).getAttribute('data-name') || path.split('/').pop() || 'file'
+        if (path) blocks.push({ type: 'file', content: path, name })
       } else if (node.nodeName === 'DIV' || node.nodeName === 'P') {
         if (currentText && !currentText.endsWith('\n')) currentText += '\n'
         for (const child of node.childNodes) walk(child)
@@ -398,21 +430,24 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
 
   // 发送消息
   const send = async () => {
-    const { blocks } = extractBlocks()
+    const { blocks } = extractBlocks() as { blocks: ChatBlock[] }
     if (blocks.length === 0 || loading) return
 
     // 清空输入框
     if (inputRef.current) inputRef.current.innerHTML = ''
 
-    // 组装显示内容
-    const textParts = blocks.filter(b => b.type === 'text').map(b => b.content)
-    const imgParts = blocks.filter(b => b.type === 'image').map(b => `![](${b.content})`)
-    const fileParts = blocks.filter(b => b.type === 'file').map(b => `[file](${b.content})`)
-    const content = [...textParts, ...imgParts, ...fileParts].join('\n')
+    // 组装显示内容（按原始顺序混排）
+    const contentParts = blocks.map(b => {
+      if (b.type === 'text') return b.content
+      if (b.type === 'image') return `![](${b.content})`
+      if (b.type === 'file') return `[📎 ${b.name || 'file'}](${b.content})`
+      return ''
+    })
+    const content = contentParts.join('\n')
 
     const msgAttachments: Attachment[] = blocks
       .filter(b => b.type === 'image' || b.type === 'file')
-      .map(b => ({ name: '', path: b.content, type: b.type as 'image' | 'file' }))
+      .map(b => ({ name: b.name || '', path: b.content, type: b.type as 'image' | 'file' }))
 
     setMessages(prev => [...prev, { role: 'user', content, attachments: msgAttachments, timestamp: Date.now() }])
     setLoading(true)
@@ -608,15 +643,6 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
               )}
               {messages.map((msg, i) => (
                 <div key={i} className="group">
-                  {msg.role === 'user' && msg.attachments && msg.attachments.length > 0 && (
-                    <div className="flex flex-wrap gap-1 justify-end mb-1">
-                      {msg.attachments.map((att, j) => (
-                        att.type === 'image'
-                          ? <img key={j} src={att.path} alt={att.name} className="max-w-[120px] max-h-[80px] rounded object-cover cursor-pointer" onClick={() => setLightboxSrc(att.path)} />
-                          : <span key={j} className="text-[11px] bg-[var(--color-surface)] text-[var(--color-muted)] px-2 py-0.5 rounded">📎 {att.name}</span>
-                      ))}
-                    </div>
-                  )}
                   {msg.role === 'bot' && (
                     <>
                       <div className="text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl w-fit mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm">
