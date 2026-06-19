@@ -152,23 +152,21 @@ function renderUserMessage(text: string): string {
     // 图片行
     const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)\s*$/)
     if (imgMatch) {
-      html += `<img src="${escapeHtml(imgMatch[2])}" alt="${escapeHtml(imgMatch[1])}" class="chat-img" style="max-width:200px;max-height:140px;border-radius:6px;margin:3px 0;display:block;object-fit:cover;border:1px solid rgba(255,255,255,0.15);cursor:pointer" />`
+      html += `<img src="${escapeHtml(imgMatch[2])}" alt="${escapeHtml(imgMatch[1])}" class="chat-img" style="max-width:200px;max-height:140px;border-radius:6px;margin:3px 0;display:block;object-fit:cover;border:1px solid var(--color-border);cursor:pointer" />`
       continue
     }
     
     // 文件行
     const fileMatch = line.match(/^\[([^\]]+)\]\(([^)]+)\)\s*$/)
     if (fileMatch) {
-      html += `<a href="${escapeHtml(fileMatch[2])}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;background:rgba(255,255,255,0.15);padding:3px 8px;border-radius:6px;font-size:11px;text-decoration:none;color:inherit;margin:2px 0">📎 ${escapeHtml(fileMatch[1])}</a><br/>`
+      html += `<a href="${escapeHtml(fileMatch[2])}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;background:var(--color-surface);border:1px solid var(--color-border);padding:3px 8px;border-radius:6px;font-size:11px;text-decoration:none;color:var(--color-muted);margin:2px 0">📎 ${escapeHtml(fileMatch[1])}</a><br/>`
       continue
     }
     
     // 混合行（行内有图片或链接）
     let processed = escapeHtml(line)
-    // 行内图片
-    processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" class="chat-img" style="max-width:120px;max-height:80px;border-radius:4px;vertical-align:middle;margin:0 2px;cursor:pointer" />')
-    // 行内文件
-    processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="background:rgba(255,255,255,0.15);padding:1px 6px;border-radius:4px;font-size:11px;text-decoration:none;color:inherit">📎 $1</a>')
+    processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" class="chat-img" style="max-width:120px;max-height:80px;border-radius:4px;vertical-align:middle;margin:0 2px;cursor:pointer;border:1px solid var(--color-border)" />')
+    processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="background:var(--color-surface);border:1px solid var(--color-border);padding:1px 6px;border-radius:4px;font-size:11px;text-decoration:none;color:var(--color-muted)">📎 $1</a>')
     
     html += processed + '<br/>'
   }
@@ -614,8 +612,8 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
               ${dragging ? 'border-[var(--color-accent)] border-2' : 'border-[var(--color-border)]'}`}
           >
             {/* 头部 */}
-            <div className="h-11 flex items-center justify-between px-4 border-b border-[var(--color-border)] flex-shrink-0">
-              <span className="text-xs font-semibold text-[var(--color-muted)] uppercase tracking-wide">AI 助手</span>
+            <div className="h-11 flex items-center justify-between px-4 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-surface)]">
+              <span className="text-xs font-semibold text-[var(--color-fg)]">AI 助手</span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setOpen(false)}
@@ -645,7 +643,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
                 <div key={i} className="group">
                   {msg.role === 'bot' && (
                     <>
-                      <div className="text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl w-fit mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm">
+                      <div className="text-[13px] leading-relaxed break-words px-3 py-2.5 rounded-lg w-fit mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm">
                         {msg.content
                           ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
                           : (loading && i === messages.length - 1
@@ -668,7 +666,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
                   {msg.role === 'user' && (
                     <>
                       <div
-                        className="text-[13px] leading-relaxed break-words px-3 py-2 rounded-xl w-fit ml-auto max-w-[80%] bg-[var(--color-accent)] text-white whitespace-pre-wrap rounded-br-sm"
+                        className="text-[13px] leading-relaxed break-words px-3 py-2.5 rounded-lg w-fit ml-auto max-w-[85%] bg-[var(--color-accent-dim)] text-[var(--color-fg)] border border-[var(--color-accent)]/20 rounded-br-sm"
                       >
                         <div dangerouslySetInnerHTML={{ __html: renderUserMessage(msg.content) }} />
                       </div>
@@ -749,8 +747,8 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
                   disabled={loading || inputEmpty}
                   className="w-8 h-8 rounded-lg bg-[var(--color-accent)] text-white
                     flex items-center justify-center flex-shrink-0
-                    disabled:opacity-30 disabled:cursor-not-allowed
-                    hover:brightness-110 active:scale-[0.92]
+                    disabled:opacity-20 disabled:cursor-not-allowed
+                    hover:bg-[var(--color-accent-hover)] active:scale-[0.92]
                     transition-all cursor-pointer"
                   aria-label="发送"
                 >
