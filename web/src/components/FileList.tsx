@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { FolderSimple, FileText, FileCode, Image, File, CaretLeft } from '@phosphor-icons/react'
+import { FolderSimple, FileText, FileCode, Image, File, CaretLeft, Notebook } from '@phosphor-icons/react'
 import type { FileEntry } from '../App'
 
 // 可在 SPA 内预览的文件扩展名
@@ -141,9 +141,14 @@ export function FileList({ entries, currentPath, onNavigate, onBack }: Props) {
             </span>
           </>
         ) : (
-          <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
-            Notes
-          </span>
+          <>
+            <div className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] flex-shrink-0">
+              <Notebook size={18} weight="bold" />
+            </div>
+            <span className="text-lg font-mono font-semibold text-[var(--color-fg)]">
+              Notes
+            </span>
+          </>
         )}
       </div>
       <div className="divide-y divide-[var(--color-border)]">
