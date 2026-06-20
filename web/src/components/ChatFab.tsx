@@ -1,183 +1,10 @@
-import { useState, useRef, useEffect, useCallback } from 'react'
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { ChatCircle, PaperPlaneRight, X, Paperclip } from '@phosphor-icons/react'
+import { ChatCircle, PaperPlaneRight, X, Paperclip, Robot, Stop, Copy, Check, Lock, LockOpen } from '@phosphor-icons/react'
+import ReactMarkdown from 'react-markdown'
+import remarkGfm from 'remark-gfm'
 
-// --- Markdown 渲染 ---
-
-function renderMarkdown(text: string): string {
-  const codeBlocks: string[] = []
-
-  // 闭合的代码块
-  let processed = text.replace(/```(\w*)\n?([\s\S]*?)```/g, (_match, lang, code) => {
-    const idx = codeBlocks.length
-    const escaped = escapeHtml(code.trimEnd())
-    codeBlocks.push(
-      `<div class="code-block-wrapper"><div class="code-block-header"><span class="code-lang">${lang || 'code'}</span><button class="copy-btn" data-code="${encodeURIComponent(code.trimEnd())}">复制</button></div><pre><code>${escaped}</code></pre></div>`
-    )
-    return `\x00CODEBLOCK_${idx}\x00`
-  })
-
-  // 未闭合的代码块（流式中间状态）
-  processed = processed.replace(/```(\w*)\n?([\s\S]*)$/, (_match, lang, code) => {
-    const idx = codeBlocks.length
-    const escaped = escapeHtml(code)
-    codeBlocks.push(
-      `<div class="code-block-wrapper streaming"><div class="code-block-header"><span class="code-lang">${lang || 'code'}</span></div><pre><code>${escaped}<span class="cursor-blink">|</span></code></pre></div>`
-    )
-    return `\x00CODEBLOCK_${idx}\x00`
-  })
-
-  // 行内格式
-  processed = processed.replace(/`([^`\n]+)`/g, '<code class="inline-code">$1</code>')
-  processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" alt="$1" class="chat-img" />')
-  processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener" class="chat-link">$1</a>')
-  processed = processed.replace(/\*\*\*(.+?)\*\*\*/g, '<strong><em>$1</em></strong>')
-  processed = processed.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-  processed = processed.replace(/\*(.+?)\*/g, '<em>$1</em>')
-  processed = processed.replace(/~~(.+?)~~/g, '<del>$1</del>')
-
-  // 表格
-  processed = processed.replace(/(?:^|\n)(\|.+\|(?:\n\|[-|: ]+\|)\n(?:\|.+\|\n?)+)/g, (_match, table: string) => {
-    const rows = table.trim().split('\n')
-    if (rows.length < 2) return table
-    const headerCells = rows[0].split('|').filter(c => c.trim())
-    const bodyRows = rows.slice(2)
-    let html = '<table class="chat-table"><thead><tr>'
-    headerCells.forEach(c => { html += `<th>${c.trim()}</th>` })
-    html += '</tr></thead><tbody>'
-    bodyRows.forEach(row => {
-      const cells = row.split('|').filter(c => c.trim())
-      html += '<tr>'
-      cells.forEach(c => { html += `<td>${c.trim()}</td>` })
-      html += '</tr>'
-    })
-    html += '</tbody></table>'
-    return html
-  })
-
-  // 逐行处理：列表、引用块、分割线
-  const lines = processed.split('\n')
-  let inList = false
-  let listType: 'ul' | 'ol' = 'ul'
-  let inBlockquote = false
-  const result: string[] = []
-
-  for (const line of lines) {
-    const ulMatch = line.match(/^(\s*)[-*]\s+(.+)/)
-    const olMatch = line.match(/^(\s*)\d+\.\s+(.+)/)
-    const bqMatch = line.match(/^>\s?(.*)$/)
-    const hrMatch = /^[-*_]{3,}\s*$/.test(line.trim())
-
-    // 分割线
-    if (hrMatch) {
-      if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false }
-      if (inBlockquote) { result.push('</blockquote>'); inBlockquote = false }
-      result.push('<hr class="chat-hr"/>')
-      continue
-    }
-
-    // 引用块
-    if (bqMatch) {
-      if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false }
-      if (!inBlockquote) { result.push('<blockquote class="chat-blockquote">'); inBlockquote = true }
-      result.push(bqMatch[1] || '<br/>')
-      continue
-    } else if (inBlockquote) {
-      result.push('</blockquote>')
-      inBlockquote = false
-    }
-
-    // 列表
-    if (ulMatch) {
-      if (!inList || listType !== 'ul') {
-        if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>')
-        result.push('<ul class="chat-list">')
-        inList = true
-        listType = 'ul'
-      }
-      result.push(`<li>${ulMatch[2]}</li>`)
-    } else if (olMatch) {
-      if (!inList || listType !== 'ol') {
-        if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>')
-        result.push('<ol class="chat-list">')
-        inList = true
-        listType = 'ol'
-      }
-      result.push(`<li>${olMatch[2]}</li>`)
-    } else {
-      if (inList) { result.push(listType === 'ul' ? '</ul>' : '</ol>'); inList = false }
-      result.push(line)
-    }
-  }
-  if (inList) result.push(listType === 'ul' ? '</ul>' : '</ol>')
-  if (inBlockquote) result.push('</blockquote>')
-
-  processed = result.join('\n')
-
-  // 换行处理：连续空行压缩，但不用 <p> 标签（避免列表内被撑开）
-  processed = processed
-    .replace(/\n{3,}/g, '\n\n')           // 3+ 空行合并为 2
-    .replace(/\n\n/g, '<br/><br/>')       // 双换行 = 一个空行间隔
-    .replace(/\n/g, '<br/>')              // 单换行
-  // 清理列表标签旁边的多余 br
-  processed = processed.replace(/<br\/>(<\/?[uo]l)/g, '$1')
-  processed = processed.replace(/(<\/?[uo]l[^>]*>)<br\/>/g, '$1')
-  processed = processed.replace(/<br\/>(<li>)/g, '$1')
-  processed = processed.replace(/(<\/li>)<br\/>/g, '$1')
-
-  codeBlocks.forEach((block, i) => {
-    processed = processed.replace(`\x00CODEBLOCK_${i}\x00`, block)
-  })
-
-  return processed
-}
-
-function escapeHtml(text: string): string {
-  return text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;')
-}
-
-// 用户消息渲染：按原始顺序混排图片、文件、文字
-function renderUserMessage(text: string): string {
-  if (!text) return ''
-  
-  // 按行处理，保持原始顺序
-  const lines = text.split('\n')
-  let html = ''
-  
-  for (const line of lines) {
-    // 图片行
-    const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)\s*$/)
-    if (imgMatch) {
-      html += `<img src="${escapeHtml(imgMatch[2])}" alt="${escapeHtml(imgMatch[1])}" class="chat-img" style="max-width:200px;max-height:140px;border-radius:6px;margin:3px 0;display:block;object-fit:cover;border:1px solid var(--color-border);cursor:pointer" />`
-      continue
-    }
-    
-    // 文件行
-    const fileMatch = line.match(/^\[([^\]]+)\]\(([^)]+)\)\s*$/)
-    if (fileMatch) {
-      html += `<a href="${escapeHtml(fileMatch[2])}" target="_blank" style="display:inline-flex;align-items:center;gap:3px;background:var(--color-surface);border:1px solid var(--color-border);padding:3px 8px;border-radius:6px;font-size:11px;text-decoration:none;color:var(--color-muted);margin:2px 0">📎 ${escapeHtml(fileMatch[1])}</a><br/>`
-      continue
-    }
-    
-    // 混合行（行内有图片或链接）
-    let processed = escapeHtml(line)
-    processed = processed.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '<img src="$2" class="chat-img" style="max-width:120px;max-height:80px;border-radius:4px;vertical-align:middle;margin:0 2px;cursor:pointer;border:1px solid var(--color-border)" />')
-    processed = processed.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" style="background:var(--color-surface);border:1px solid var(--color-border);padding:1px 6px;border-radius:4px;font-size:11px;text-decoration:none;color:var(--color-muted)">📎 $1</a>')
-    
-    html += processed + '<br/>'
-  }
-  
-  // 去掉末尾多余的 br
-  html = html.replace(/(<br\/>)+$/, '')
-  
-  return html
-}
-
-// --- 类型定义 ---
+// --- 类型 ---
 
 interface Attachment {
   name: string
@@ -198,6 +25,113 @@ interface ChatBlock {
   name?: string
 }
 
+// --- 代码块组件（带复制按钮）---
+
+function CodeBlock({ className, children }: { className?: string; children: React.ReactNode }) {
+  const [copied, setCopied] = useState(false)
+  const lang = className?.replace('language-', '') || ''
+  const code = String(children).replace(/\n$/, '')
+  const lines = code.split('\n')
+
+  const handleCopy = () => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(code).then(() => {
+        setCopied(true)
+        setTimeout(() => setCopied(false), 1500)
+      })
+    } else {
+      const ta = document.createElement('textarea')
+      ta.value = code
+      ta.style.position = 'fixed'
+      ta.style.left = '-9999px'
+      document.body.appendChild(ta)
+      ta.select()
+      document.execCommand('copy')
+      document.body.removeChild(ta)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1500)
+    }
+  }
+
+  return (
+    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)] my-2">
+      <div className="px-3 py-1.5 border-b border-[var(--color-border)] flex items-center justify-between">
+        <span className="text-[10px] text-[var(--color-dim)] font-mono uppercase">{lang || 'code'}</span>
+        <button
+          onClick={handleCopy}
+          className="text-[var(--color-muted)] hover:text-[var(--color-fg)] p-1 rounded hover:bg-[var(--color-border)] transition-colors cursor-pointer"
+          aria-label="复制"
+        >
+          {copied ? <Check size={12} weight="bold" className="text-green-500" /> : <Copy size={12} />}
+        </button>
+      </div>
+      <div className="overflow-x-auto">
+        <pre className="px-0 py-3 text-[12px] leading-relaxed font-mono">
+          <code>{lines.map((line, i) => (
+            <div key={i} className="flex hover:bg-[var(--color-bg)] transition-colors px-4">
+              <span className="select-none text-[var(--color-dim)] text-right w-7 pr-3 flex-shrink-0">{i + 1}</span>
+              <span className="text-[var(--color-fg)] flex-1">{line || ' '}</span>
+            </div>
+          ))}</code>
+        </pre>
+      </div>
+    </div>
+  )
+}
+
+// --- 用户消息渲染（支持图文混排）---
+
+function UserMessageContent({ content }: { content: string }) {
+  const parts = useMemo(() => {
+    if (!content) return []
+    const result: { type: 'text' | 'image' | 'file'; value: string; label?: string }[] = []
+    const lines = content.split('\n')
+
+    for (const line of lines) {
+      const imgMatch = line.match(/^!\[([^\]]*)\]\(([^)]+)\)\s*$/)
+      if (imgMatch) {
+        result.push({ type: 'image', value: imgMatch[2], label: imgMatch[1] })
+        continue
+      }
+      const fileMatch = line.match(/^\[([^\]]+)\]\(([^)]+)\)\s*$/)
+      if (fileMatch) {
+        result.push({ type: 'file', value: fileMatch[2], label: fileMatch[1] })
+        continue
+      }
+      // 行内图片/文件提取
+      if (line.includes('![') || line.includes('](')) {
+        // 简单处理：整行当文本，去掉 markdown 语法
+        result.push({ type: 'text', value: line.replace(/!\[([^\]]*)\]\(([^)]+)\)/g, '[$1]').replace(/\[([^\]]+)\]\(([^)]+)\)/g, '$1') })
+      } else {
+        result.push({ type: 'text', value: line })
+      }
+    }
+    return result
+  }, [content])
+
+  return (
+    <div className="chat-user-content">
+      {parts.map((part, i) => {
+        if (part.type === 'image') {
+          return <img key={i} src={part.value} alt={part.label} className="chat-user-img" />
+        }
+        if (part.type === 'file') {
+          return (
+            <a key={i} href={part.value} target="_blank" rel="noopener" className="chat-attach-tag">
+              <Paperclip size={11} />
+              {part.label?.replace(/^📎\s*/, '') || 'file'}
+            </a>
+          )
+        }
+        if (!part.value.trim()) return null
+        return <span key={i} className="chat-user-text">{part.value}</span>
+      })}
+    </div>
+  )
+}
+
+// --- 主组件 ---
+
 export function ChatFab({ currentPath }: { currentPath: string }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
@@ -207,14 +141,21 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
   const [dragging, setDragging] = useState(false)
   const [inputEmpty, setInputEmpty] = useState(true)
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
+  const [pinContext, setPinContext] = useState(() => localStorage.getItem('chat-pin-context') === 'true')
+  const [pinnedPath, setPinnedPath] = useState(() => localStorage.getItem('chat-pinned-path') || '')
   const abortRef = useRef<AbortController | null>(null)
   const messagesEnd = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
 
-  // 路径变化时切换对话
+  // 路径变化时切换对话（固定上下文时保持 pinned path 的 session）
   useEffect(() => {
+    if (pinContext) {
+      // 固定模式：pathRef 保持 pinnedPath，不切换对话
+      pathRef.current = pinnedPath
+      return
+    }
     pathRef.current = currentPath
     const key = `chat-history:${currentPath || '/'}`
     const hist = localStorage.getItem(key)
@@ -223,9 +164,9 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
     } else {
       setMessages([])
     }
-  }, [currentPath])
+  }, [currentPath, pinContext, pinnedPath])
 
-  // 保存历史（按路径）
+  // 保存历史
   useEffect(() => {
     if (messages.length > 0) {
       const key = `chat-history:${pathRef.current || '/'}`
@@ -233,14 +174,10 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
     }
   }, [messages])
 
-  // 打开时聚焦
   useEffect(() => {
-    if (open) {
-      setTimeout(() => inputRef.current?.focus(), 100)
-    }
+    if (open) setTimeout(() => inputRef.current?.focus(), 100)
   }, [open])
 
-  // Escape 关闭面板
   useEffect(() => {
     if (!open) return
     const handleEsc = (e: KeyboardEvent) => {
@@ -253,17 +190,29 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
     return () => window.removeEventListener('keydown', handleEsc)
   }, [open, lightboxSrc])
 
-  // 滚动到底部（消息变化或面板打开时）
+  // 智能滚动：只有用户在底部附近时才自动滚动
+  const isNearBottom = useRef(true)
+  const messagesContainerRef = useRef<HTMLDivElement>(null)
+
+  const handleScroll = useCallback(() => {
+    const el = messagesContainerRef.current
+    if (!el) return
+    // 距底部 80px 以内算"在底部"
+    isNearBottom.current = el.scrollHeight - el.scrollTop - el.clientHeight < 80
+  }, [])
+
   useEffect(() => {
-    setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior }), 50)
+    if (isNearBottom.current) {
+      setTimeout(() => messagesEnd.current?.scrollIntoView({ behavior: 'instant' as ScrollBehavior }), 50)
+    }
   }, [messages, open])
 
-  // 上传文件
+  // --- 文件上传 ---
   const uploadFile = useCallback(async (file: File): Promise<Attachment | null> => {
     try {
       const res = await fetch('/api/upload', {
         method: 'POST',
-        headers: { 'X-Filename': file.name, 'Content-Type': 'application/octet-stream' },
+        headers: { 'X-Filename': encodeURIComponent(file.name), 'Content-Type': 'application/octet-stream' },
         body: file,
       })
       if (!res.ok) return null
@@ -271,154 +220,163 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
       const isImage = file.type.startsWith('image/')
       const filePath = data.path.startsWith('/') ? data.path : `/${data.path}`
       return { name: data.name || file.name, path: filePath, type: isImage ? 'image' : 'file' }
-    } catch {
-      return null
-    }
+    } catch { return null }
   }, [])
 
-  // 粘贴事件：图片插入编辑区，文本强制纯文本
+  // --- 插入附件到输入框（在光标位置）---
+  const insertAttachment = useCallback((att: Attachment) => {
+    const el = inputRef.current
+    if (!el) return
+
+    const node = att.type === 'image'
+      ? (() => {
+          const img = document.createElement('img')
+          img.src = att.path
+          img.setAttribute('data-path', att.path)
+          img.setAttribute('data-name', att.name)
+          img.className = 'ce-img'
+          return img
+        })()
+      : (() => {
+          const chip = document.createElement('span')
+          chip.className = 'ce-file'
+          chip.contentEditable = 'false'
+          chip.setAttribute('data-path', att.path)
+          chip.setAttribute('data-name', att.name)
+          chip.textContent = att.name
+          return chip
+        })()
+
+    const spacer = document.createTextNode('\u00A0')
+
+    el.focus()
+    const sel = window.getSelection()
+    if (sel && sel.rangeCount > 0) {
+      const range = sel.getRangeAt(0)
+      // 确保光标在输入框内
+      if (el.contains(range.commonAncestorContainer)) {
+        range.deleteContents()
+        range.insertNode(spacer)
+        range.insertNode(node)
+        // 光标移到 spacer 之后
+        range.setStartAfter(spacer)
+        range.collapse(true)
+        sel.removeAllRanges()
+        sel.addRange(range)
+      } else {
+        // 光标不在输入框内，追加到末尾
+        el.appendChild(node)
+        el.appendChild(spacer)
+        sel.selectAllChildren(el)
+        sel.collapseToEnd()
+      }
+    } else {
+      el.appendChild(node)
+      el.appendChild(spacer)
+      if (sel) {
+        sel.selectAllChildren(el)
+        sel.collapseToEnd()
+      }
+    }
+
+    setInputEmpty(false)
+    // 滚动输入框到光标位置
+    setTimeout(() => {
+      const cursor = el.querySelector(':focus') || spacer
+      if (cursor && 'scrollIntoView' in cursor) {
+        (cursor as HTMLElement).scrollIntoView?.({ block: 'nearest' })
+      } else {
+        el.scrollTop = el.scrollHeight
+      }
+    }, 0)
+  }, [])
+
+  // --- 粘贴 ---
   const handlePaste = useCallback(async (e: React.ClipboardEvent) => {
     const items = e.clipboardData.items
     for (let i = 0; i < items.length; i++) {
-      const item = items[i]
-      if (item.type.startsWith('image/')) {
+      if (items[i].type.startsWith('image/')) {
         e.preventDefault()
-        const file = item.getAsFile()
+        const file = items[i].getAsFile()
         if (!file) continue
         const att = await uploadFile(file)
-        if (att && inputRef.current) {
-          // 插入图片到编辑区
-          const img = document.createElement('img')
-          img.src = att.path
-          img.setAttribute('data-path', att.path)
-          img.setAttribute('data-name', att.name)
-          img.style.cssText = 'max-width:120px;max-height:80px;border-radius:6px;margin:2px;vertical-align:middle;'
-          inputRef.current.focus()
-          const sel = window.getSelection()
-          if (sel && sel.rangeCount > 0) {
-            const range = sel.getRangeAt(0)
-            range.deleteContents()
-            range.insertNode(img)
-            range.setStartAfter(img)
-            range.collapse(true)
-            sel.removeAllRanges()
-            sel.addRange(range)
-          } else {
-            inputRef.current.appendChild(img)
-          }
-          setInputEmpty(false)
-        }
+        if (att) insertAttachment(att)
         return
       }
     }
-    // 非图片：强制纯文本粘贴
+    // 非图片：强制纯文本
     e.preventDefault()
     const text = e.clipboardData.getData('text/plain')
-    if (text) {
-      document.execCommand('insertText', false, text)
-      setInputEmpty(false)
-    }
-  }, [uploadFile])
+    if (text) document.execCommand('insertText', false, text)
+  }, [uploadFile, insertAttachment])
 
-  // 文件选择：上传后插入编辑区
+  // --- 文件选择 ---
   const handleFileChange = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files
-    if (!files || !inputRef.current) return
+    if (!files) return
     for (let i = 0; i < files.length; i++) {
       const att = await uploadFile(files[i])
-      if (att) {
-        if (att.type === 'image') {
-          const img = document.createElement('img')
-          img.src = att.path
-          img.setAttribute('data-path', att.path)
-          img.setAttribute('data-name', att.name)
-          img.style.cssText = 'max-width:120px;max-height:80px;border-radius:6px;margin:2px;vertical-align:middle;'
-          inputRef.current.appendChild(img)
-        } else {
-          const span = document.createElement('span')
-          span.className = 'file-tag'
-          span.contentEditable = 'false'
-          span.setAttribute('data-path', att.path)
-          span.setAttribute('data-name', att.name)
-          span.textContent = `📎 ${att.name}`
-          inputRef.current.appendChild(span)
-          inputRef.current.appendChild(document.createTextNode('\u00A0'))
-        }
-        // 更新输入状态（DOM 编程修改不触发 onInput）
-        setInputEmpty(false)
-      }
+      if (att) insertAttachment(att)
     }
     e.target.value = ''
-  }, [uploadFile])
+  }, [uploadFile, insertAttachment])
 
-  // 代码块复制
-  const handleMessageClick = useCallback((e: React.MouseEvent) => {
+  // --- 图片点击放大 ---
+  const handleImgClick = useCallback((e: React.MouseEvent) => {
     const target = e.target as HTMLElement
-    // 图片点击放大
-    if (target.tagName === 'IMG' && target.classList.contains('chat-img')) {
+    if (target.tagName === 'IMG' && target.closest('.chat-messages')) {
       setLightboxSrc((target as HTMLImageElement).src)
-      return
-    }
-    const copyBtn = target.closest('.copy-btn') as HTMLElement | null
-    if (copyBtn) {
-      const code = decodeURIComponent(copyBtn.dataset.code || '')
-      navigator.clipboard.writeText(code).then(() => {
-        copyBtn.textContent = '已复制'
-        setTimeout(() => { copyBtn.textContent = '复制' }, 1500)
-      })
     }
   }, [])
 
-  // 清除对话（重置当前路径的 session）
+  // --- 清除对话 ---
   const clearChat = useCallback(() => {
     setMessages([])
-    const key = `chat-history:${currentPath || '/'}`
-    const sessionKey = `chat-session:${currentPath || '/'}`
-    localStorage.removeItem(key)
-    localStorage.removeItem(sessionKey)
+    const ctxPath = pinContext ? pinnedPath : currentPath
+    localStorage.removeItem(`chat-history:${ctxPath || '/'}`)
+    localStorage.removeItem(`chat-session:${ctxPath || '/'}`)
     setToolHint('')
-  }, [currentPath])
+  }, [currentPath, pinContext, pinnedPath])
 
-  // 停止生成
+  // --- 停止 ---
   const stopGeneration = useCallback(() => {
-    if (abortRef.current) {
-      abortRef.current.abort()
-      abortRef.current = null
-    }
+    abortRef.current?.abort()
+    abortRef.current = null
     setLoading(false)
     setToolHint('')
   }, [])
 
-  // 从 contenteditable 提取 blocks
-  const extractBlocks = useCallback(() => {
+  // --- 提取输入内容 ---
+  const extractBlocks = useCallback((): ChatBlock[] => {
     const el = inputRef.current
-    if (!el) return { blocks: [] as { type: string; content: string }[], displayHtml: '' }
+    if (!el) return []
     const blocks: ChatBlock[] = []
-    let currentText = ''
+    let text = ''
 
     const flush = () => {
-      const t = currentText.trim()
+      const t = text.replace(/[\u200B\u00A0]+/g, ' ').trim()
       if (t) blocks.push({ type: 'text', content: t })
-      currentText = ''
+      text = ''
     }
+
     const walk = (node: Node) => {
       if (node.nodeType === 3) {
-        currentText += node.textContent || ''
+        text += node.textContent || ''
       } else if (node.nodeName === 'IMG') {
         flush()
         const path = (node as HTMLElement).getAttribute('data-path') || ''
         if (path) blocks.push({ type: 'image', content: path })
       } else if (node.nodeName === 'BR') {
-        currentText += '\n'
-      } else if ((node as HTMLElement).classList?.contains('file-tag')) {
+        text += '\n'
+      } else if ((node as HTMLElement).classList?.contains('ce-file')) {
         flush()
         const path = (node as HTMLElement).getAttribute('data-path') || ''
-        const name = (node as HTMLElement).getAttribute('data-name') || path.split('/').pop() || 'file'
+        const name = (node as HTMLElement).getAttribute('data-name') || 'file'
         if (path) blocks.push({ type: 'file', content: path, name })
       } else if (node.nodeName === 'DIV' || node.nodeName === 'P') {
-        if (currentText && !currentText.endsWith('\n')) currentText += '\n'
+        if (text && !text.endsWith('\n')) text += '\n'
         for (const child of node.childNodes) walk(child)
-        if (!currentText.endsWith('\n')) currentText += '\n'
+        if (!text.endsWith('\n')) text += '\n'
       } else {
         for (const child of node.childNodes) walk(child)
       }
@@ -426,36 +384,34 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
 
     for (const child of el.childNodes) walk(child)
     flush()
-
-    return { blocks }
+    return blocks
   }, [])
 
-  // 发送消息
+  // --- 发送 ---
   const send = async () => {
-    const { blocks } = extractBlocks() as { blocks: ChatBlock[] }
+    const blocks = extractBlocks()
     if (blocks.length === 0 || loading) return
 
-    // 清空输入框
     if (inputRef.current) inputRef.current.innerHTML = ''
+    setInputEmpty(true)
 
-    // 组装显示内容（按原始顺序混排）
-    const contentParts = blocks.map(b => {
+    const content = blocks.map(b => {
       if (b.type === 'text') return b.content
       if (b.type === 'image') return `![](${b.content})`
-      if (b.type === 'file') return `[📎 ${b.name || 'file'}](${b.content})`
+      if (b.type === 'file') return `[${b.name || 'file'}](${b.content})`
       return ''
-    })
-    const content = contentParts.join('\n')
+    }).join('\n')
 
-    const msgAttachments: Attachment[] = blocks
+    const attachments: Attachment[] = blocks
       .filter(b => b.type === 'image' || b.type === 'file')
       .map(b => ({ name: b.name || '', path: b.content, type: b.type as 'image' | 'file' }))
 
-    setMessages(prev => [...prev, { role: 'user', content, attachments: msgAttachments, timestamp: Date.now() }])
+    setMessages(prev => [...prev, { role: 'user', content, attachments, timestamp: Date.now() }])
     setLoading(true)
 
     try {
-      const sessionKey = `chat-session:${currentPath || '/'}`
+      const ctxPath = pinContext ? pinnedPath : currentPath
+      const sessionKey = `chat-session:${ctxPath || '/'}`
       const session = localStorage.getItem(sessionKey) || `web-${Math.random().toString(36).slice(2, 10)}`
       if (!localStorage.getItem(sessionKey)) localStorage.setItem(sessionKey, session)
 
@@ -468,7 +424,8 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
         body: JSON.stringify({
           blocks,
           session,
-          context_path: location.pathname,
+          context_path: pinContext ? `/notes/${pinnedPath}` : location.pathname,
+          ...(pinContext && currentPath !== pinnedPath ? { ref_path: location.pathname } : {}),
         }),
         signal: controller.signal,
       })
@@ -502,11 +459,9 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
                 setToolHint(ev.content)
               } else if (ev.type === 'file') {
                 setToolHint('')
-                if (ev.is_image) {
-                  fullText += `\n![${ev.name}](${ev.url})\n`
-                } else {
-                  fullText += `\n[📎 ${ev.name}](${ev.url})\n`
-                }
+                fullText += ev.is_image
+                  ? `\n![${ev.name}](${ev.url})\n`
+                  : `\n[${ev.name}](${ev.url})\n`
                 setMessages(prev => {
                   const next = [...prev]
                   next[next.length - 1] = { role: 'bot', content: fullText }
@@ -530,69 +485,99 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
     }
   }
 
-  // 拖拽上传
-  const handleDragOver = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragging(true)
-  }, [])
-
-  const handleDragLeave = useCallback((e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragging(false)
-  }, [])
-
+  // --- 拖拽 ---
+  const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragging(true) }, [])
+  const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragging(false) }, [])
   const handleDrop = useCallback(async (e: React.DragEvent) => {
-    e.preventDefault()
-    e.stopPropagation()
-    setDragging(false)
+    e.preventDefault(); e.stopPropagation(); setDragging(false)
     const files = e.dataTransfer.files
-    if (!files || files.length === 0 || !inputRef.current) return
+    if (!files || files.length === 0) return
     for (let i = 0; i < files.length; i++) {
       const att = await uploadFile(files[i])
-      if (att) {
-        if (att.type === 'image') {
-          const img = document.createElement('img')
-          img.src = att.path
-          img.setAttribute('data-path', att.path)
-          img.setAttribute('data-name', att.name)
-          img.style.cssText = 'max-width:120px;max-height:80px;border-radius:6px;margin:2px;vertical-align:middle;'
-          inputRef.current.appendChild(img)
-        } else {
-          const span = document.createElement('span')
-          span.className = 'file-tag'
-          span.contentEditable = 'false'
-          span.setAttribute('data-path', att.path)
-          span.setAttribute('data-name', att.name)
-          span.textContent = `📎 ${att.name}`
-          inputRef.current.appendChild(span)
-          inputRef.current.appendChild(document.createTextNode('\u00A0'))
-        }
-        setInputEmpty(false)
-      }
+      if (att) insertAttachment(att)
     }
-  }, [uploadFile])
+  }, [uploadFile, insertAttachment])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) {
-      e.preventDefault()
-      send()
+    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+    // Ctrl/Cmd+B 加粗
+    if ((e.metaKey || e.ctrlKey) && e.key === 'b') { e.preventDefault(); document.execCommand('bold') }
+    // Ctrl/Cmd+I 斜体
+    if ((e.metaKey || e.ctrlKey) && e.key === 'i') { e.preventDefault(); document.execCommand('italic') }
+    // 退格删除 contentEditable=false 的附件节点
+    if (e.key === 'Backspace') {
+      const sel = window.getSelection()
+      if (!sel || sel.rangeCount === 0) return
+      const range = sel.getRangeAt(0)
+      if (!range.collapsed) return // 有选区，浏览器自己处理
+      const { startContainer, startOffset } = range
+      let target: Node | null = null
+      if (startContainer.nodeType === 3 && startOffset === 0) {
+        // 光标在文本节点开头，前一个兄弟可能是附件
+        target = startContainer.previousSibling
+      } else if (startContainer.nodeType === 1 && startOffset > 0) {
+        // 光标在元素内，前一个子节点可能是附件
+        target = startContainer.childNodes[startOffset - 1]
+      }
+      if (target && target.nodeType === 1) {
+        const el = target as HTMLElement
+        if (el.classList?.contains('ce-file') || el.classList?.contains('ce-img') || el.tagName === 'IMG') {
+          e.preventDefault()
+          el.remove()
+          checkInputEmpty()
+        }
+      }
     }
   }
 
+  const checkInputEmpty = useCallback(() => {
+    const el = inputRef.current
+    if (!el) return
+    const hasContent = !!(el.textContent?.trim() || el.querySelector('img, .ce-file'))
+    setInputEmpty(!hasContent)
+    // 清理残留 <br>，让 :empty 伪类生效显示 placeholder
+    if (!hasContent && el.innerHTML !== '') {
+      el.innerHTML = ''
+    }
+  }, [])
+
+  // --- react-markdown 组件映射 ---
+  const mdComponents = useMemo(() => ({
+    pre({ children }: any) {
+      // 直接透传，让内部 CodeBlock 自己控制样式
+      return <>{children}</>
+    },
+    code({ className, children, ...props }: any) {
+      const isBlock = className?.startsWith('language-') || (typeof children === 'string' && children.includes('\n'))
+      if (isBlock) return <CodeBlock className={className}>{children}</CodeBlock>
+      return <code className="chat-inline-code" {...props}>{children}</code>
+    },
+    img({ src, alt }: any) {
+      return <img src={src} alt={alt} className="chat-md-img" onClick={() => setLightboxSrc(src)} />
+    },
+    a({ href, children }: any) {
+      return <a href={href} target="_blank" rel="noopener" className="chat-md-link">{children}</a>
+    },
+    table({ children }: any) { return <div className="chat-table-wrap"><table>{children}</table></div> },
+    td({ children }: any) {
+      const text = typeof children === 'string' ? children : Array.isArray(children) ? children.map((c: any) => typeof c === 'string' ? c : '').join('') : ''
+      const isLong = text.length > 15
+      return <td className={isLong ? 'chat-td-wrap' : ''}>{children}</td>
+    },
+  }), [])
+
   return (
     <>
-      {/* 悬浮按钮 */}
+      {/* FAB */}
       <AnimatePresence>
         {!open && (
           <motion.button
-            initial={{ scale: reducedMotion ? 1 : 0, opacity: 0 }}
+            initial={{ scale: reducedMotion ? 1 : 0.8, opacity: 0 }}
             animate={{ scale: 1, opacity: 1 }}
-            exit={{ scale: reducedMotion ? 1 : 0, opacity: 0 }}
-            transition={{ duration: reducedMotion ? 0 : 0.2 }}
+            exit={{ scale: reducedMotion ? 1 : 0.8, opacity: 0 }}
+            transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.4, 0, 0.2, 1] }}
             onClick={() => setOpen(true)}
-            className="fixed bottom-6 right-6 z-50 w-12 h-12 rounded-full bg-[var(--color-accent)] text-white flex items-center justify-center shadow-lg hover:brightness-110 active:scale-95 transition-all cursor-pointer"
+            className="chat-fab-btn"
             aria-label="打开聊天"
           >
             <ChatCircle size={22} weight="fill" />
@@ -600,191 +585,180 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
         )}
       </AnimatePresence>
 
-      {/* 聊天面板 */}
+      {/* 面板 */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: 40, scale: 0.9 }}
+            initial={{ opacity: 0, y: 20, scale: 0.96 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 40, scale: 0.9 }}
-            transition={{ duration: 0.25, ease: [0.4, 0, 0.2, 1] }}
+            exit={{ opacity: 0, y: 20, scale: 0.96 }}
+            transition={{ duration: reducedMotion ? 0 : 0.2, ease: [0.4, 0, 0.2, 1] }}
             onDragOver={handleDragOver}
             onDragLeave={handleDragLeave}
             onDrop={handleDrop}
-            className={`fixed z-50 bg-[var(--color-bg)] border shadow-2xl flex flex-col
-              max-sm:inset-0 max-sm:rounded-none max-sm:border-0
-              sm:bottom-6 sm:right-6 sm:w-[400px] sm:h-[560px] sm:rounded-xl sm:max-h-[80vh]
-              ${dragging ? 'border-[var(--color-accent)] border-2' : 'border-[var(--color-border)]'}`}
+            className={`chat-panel ${dragging ? 'chat-panel--drag' : ''}`}
           >
             {/* 头部 */}
-            <div className="h-11 flex items-center justify-between px-4 border-b border-[var(--color-border)] flex-shrink-0 bg-[var(--color-surface)]">
-              <span className="text-xs font-semibold text-[var(--color-fg)]">AI 助手</span>
-              <div className="flex items-center gap-1">
-                <button
-                  onClick={() => setOpen(false)}
-                  className="w-7 h-7 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
-                  aria-label="关闭"
-                >
-                  <X size={14} weight="bold" />
-                </button>
+            <header className="chat-header">
+              <div className="chat-header__left">
+                <div className="chat-header__icon"><Robot size={14} weight="bold" /></div>
+                <span className="chat-header__title">AI 助手</span>
+                {loading && <span className="chat-header__badge">回答中</span>}
               </div>
-            </div>
+              <div className="chat-header__actions">
+                <button onClick={() => setOpen(false)} className="chat-icon-btn" aria-label="关闭"><X size={14} weight="bold" /></button>
+              </div>
+            </header>
 
-            {/* 拖拽提示 */}
-            {dragging && (
-              <div className="absolute inset-0 z-10 flex items-center justify-center bg-[var(--color-bg)]/90 rounded-xl">
-                <div className="text-sm text-[var(--color-accent)] font-medium">松开上传文件</div>
-              </div>
-            )}
+            {/* 拖拽层 */}
+            <AnimatePresence>
+              {dragging && (
+                <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="chat-drop-zone">
+                  <Paperclip size={20} />
+                  <span>松开上传</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* 消息区 */}
-            <div className="flex-1 overflow-y-auto px-3 py-3 space-y-3" onClick={handleMessageClick}>
+            <div className="chat-messages" ref={messagesContainerRef} onScroll={handleScroll} onClick={handleImgClick}>
               {messages.length === 0 && (
-                <div className="text-center text-xs text-[var(--color-dim)] pt-12">
-                  发送消息开始对话
+                <div className="chat-welcome">
+                  <div className="chat-welcome__icon"><ChatCircle size={24} weight="light" /></div>
+                  <p>有什么可以帮你？</p>
+                  <span>发消息开始对话 · 支持图片和文件</span>
                 </div>
               )}
+
               {messages.map((msg, i) => (
-                <div key={i} className="group">
-                  {msg.role === 'bot' && (
-                    <>
-                      <div className="text-[13px] leading-relaxed break-words px-3 py-2.5 rounded-lg w-fit mr-auto max-w-[90%] bg-[var(--color-surface)] text-[var(--color-fg)] border border-[var(--color-border)] chat-markdown rounded-bl-sm">
-                        {msg.content
-                          ? <div dangerouslySetInnerHTML={{ __html: renderMarkdown(msg.content) }} />
-                          : (loading && i === messages.length - 1
-                            ? <span className="thinking-dots">思考中</span>
-                            : '')}
+                <div key={i} className={`chat-bubble ${msg.role === 'user' ? 'chat-bubble--user' : 'chat-bubble--bot'} group`}>
+                  <div className="chat-bubble__body">
+                    {msg.role === 'bot' ? (
+                      <div className="chat-bubble__md markdown-body">
+                        {msg.content ? (
+                          <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
+                            {msg.content}
+                          </ReactMarkdown>
+                        ) : loading && i === messages.length - 1 ? (
+                          <div className="chat-dots"><span /><span /><span /></div>
+                        ) : null}
                       </div>
-                      {msg.timestamp && (
-                        <div className="text-[10px] text-[var(--color-dim)] mt-0.5 ml-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                          {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
-                      {loading && i === messages.length - 1 && toolHint && (
-                        <div className="text-[11px] text-[var(--color-dim)] mt-1 ml-1 flex items-center gap-1">
-                          <span className="animate-spin inline-block w-3 h-3 border border-[var(--color-dim)] border-t-transparent rounded-full"></span>
-                          {toolHint}
-                        </div>
-                      )}
-                    </>
-                  )}
-                  {msg.role === 'user' && (
-                    <>
-                      <div
-                        className="text-[13px] leading-relaxed break-words px-3 py-2.5 rounded-lg w-fit ml-auto max-w-[85%] bg-[var(--color-accent-dim)] text-[var(--color-fg)] border border-[var(--color-accent)]/20 rounded-br-sm"
-                      >
-                        <div dangerouslySetInnerHTML={{ __html: renderUserMessage(msg.content) }} />
+                    ) : (
+                      <UserMessageContent content={msg.content} />
+                    )}
+                    {loading && i === messages.length - 1 && msg.role === 'bot' && toolHint && (
+                      <div className="chat-tool-hint">
+                        <span className="chat-spinner" />
+                        <span className="chat-tool-text">{toolHint}</span>
                       </div>
-                      {msg.timestamp && (
-                        <div className="text-[10px] text-[var(--color-dim)] mt-0.5 mr-1 text-right opacity-0 group-hover:opacity-100 transition-opacity">
-                          {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                        </div>
-                      )}
-                    </>
-                  )}
+                    )}
+                    {msg.timestamp && (
+                      <time className={`chat-msg-time ${msg.role === 'user' ? 'chat-msg-time--right' : ''}`}>
+                        {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
+                      </time>
+                    )}
+                  </div>
                 </div>
               ))}
               {messages.length > 0 && !loading && (
-                <div className="flex justify-center pt-2">
-                  <button
-                    onClick={clearChat}
-                    className="text-[11px] text-[var(--color-dim)] hover:text-[var(--color-accent)] transition-colors cursor-pointer"
-                  >
-                    开始新对话
+                <div className="flex items-center gap-2 -mt-2">
+                  <div className="flex-1 h-px bg-[var(--color-border)]" />
+                  <button onClick={clearChat} className="text-[10px] text-[var(--color-dim)] hover:text-[var(--color-accent)] transition-colors cursor-pointer px-2">
+                    新对话
                   </button>
+                  <div className="flex-1 h-px bg-[var(--color-border)]" />
                 </div>
               )}
               <div ref={messagesEnd} />
             </div>
 
-            {/* 停止生成按钮 */}
-            {loading && (
-              <div className="flex justify-center py-1.5 border-t border-[var(--color-border)]">
+            {/* 输入区 */}
+            <div className="chat-composer">
+              <div className="chat-context-hint">
+                <span className="chat-context-label">
+                  {pinContext
+                    ? <>{pinnedPath ? decodeURIComponent(pinnedPath.split('/').pop() || '') : 'Notes'}
+                        {currentPath !== pinnedPath && <span className="chat-context-ref"> → {decodeURIComponent(currentPath.split('/').pop() || 'Notes')}</span>}
+                      </>
+                    : <>{currentPath ? decodeURIComponent(currentPath.split('/').pop() || '') : 'Notes'}</>
+                  }
+                </span>
                 <button
-                  onClick={stopGeneration}
-                  className="text-[11px] text-[var(--color-muted)] hover:text-[var(--color-fg)] px-3 py-1 rounded-full border border-[var(--color-border)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+                  className={`chat-context-lock ${pinContext ? 'chat-context-lock--active' : ''}`}
+                  onClick={() => {
+                    const next = !pinContext
+                    setPinContext(next)
+                    localStorage.setItem('chat-pin-context', String(next))
+                    if (next) {
+                      setPinnedPath(currentPath)
+                      localStorage.setItem('chat-pinned-path', currentPath)
+                    } else {
+                      setPinnedPath('')
+                      localStorage.removeItem('chat-pinned-path')
+                      pathRef.current = currentPath
+                      const key = `chat-history:${currentPath || '/'}`
+                      const hist = localStorage.getItem(key)
+                      if (hist) {
+                        try { setMessages(JSON.parse(hist)) } catch { setMessages([]) }
+                      } else {
+                        setMessages([])
+                      }
+                    }
+                  }}
+                  title={pinContext ? '解锁上下文' : '锁定上下文'}
                 >
-                  ■ 停止生成
+                  {pinContext ? <Lock size={12} weight="bold" /> : <LockOpen size={12} />}
                 </button>
               </div>
-            )}
-
-            {/* 上下文提示 */}
-            {!loading && (
-              <div className="px-3 py-1 text-[10px] text-[var(--color-dim)] truncate border-t border-[var(--color-border)]">
-                📍 {decodeURIComponent(location.pathname.replace(/^\/notes\/?/, '')) || 'Notes'}
-              </div>
-            )}
-
-            {/* 输入区 */}
-            <div className="border-t border-[var(--color-border)] p-3 bg-[var(--color-surface)]">
-              <div className="relative">
+              <div className="chat-composer__box">
                 <div
                   ref={inputRef}
                   contentEditable
                   onKeyDown={handleKeyDown}
                   onPaste={handlePaste}
-                  onInput={() => setInputEmpty(!inputRef.current?.textContent?.trim() && !inputRef.current?.querySelector('img, .file-tag'))}
-                  data-placeholder="输入消息，粘贴图片或拖拽文件..."
-                  className="w-full min-h-[44px] max-h-[180px] overflow-y-auto px-3 py-2.5 pr-10
-                    bg-[var(--color-bg)] border border-[var(--color-border)] rounded-lg
-                    text-[var(--color-fg)] text-[13px] leading-relaxed
-                    focus:outline-none focus:border-[var(--color-accent)] focus:ring-1 focus:ring-[var(--color-accent)]/20
-                    transition-all break-words"
-                  style={{ wordBreak: 'break-word' }}
+                  onInput={checkInputEmpty}
+                  onClick={(e) => {
+                    const target = e.target as HTMLElement
+                    if (target.tagName === 'IMG' && target.classList.contains('ce-img')) {
+                      setLightboxSrc((target as HTMLImageElement).src)
+                    } else if (target.classList.contains('ce-file')) {
+                      const path = target.getAttribute('data-path')
+                      if (path) window.open(path, '_blank')
+                    }
+                  }}
+                  data-placeholder="输入消息…"
+                  className="chat-composer__input"
                 />
-                <button
-                  onClick={send}
-                  disabled={loading || inputEmpty}
-                  className="absolute right-2 bottom-2 w-7 h-7 rounded-md bg-[var(--color-accent)] text-white
-                    flex items-center justify-center
-                    disabled:opacity-20 disabled:cursor-not-allowed
-                    hover:bg-[var(--color-accent-hover)] active:scale-[0.92]
-                    transition-all cursor-pointer"
-                  aria-label="发送"
-                >
-                  <PaperPlaneRight size={12} weight="bold" />
-                </button>
+                <div className="chat-composer__actions">
+                  <button onClick={() => fileInputRef.current?.click()} className="chat-icon-btn" title="添加附件">
+                    <Paperclip size={15} />
+                  </button>
+                  {loading ? (
+                    <button onClick={stopGeneration} className="chat-send-btn chat-send-btn--stop" aria-label="停止">
+                      <Stop size={13} weight="fill" />
+                    </button>
+                  ) : (
+                    <button onClick={send} disabled={inputEmpty} className="chat-send-btn" aria-label="发送">
+                      <PaperPlaneRight size={13} weight="bold" />
+                    </button>
+                  )}
+                </div>
               </div>
-              <div className="flex items-center gap-2 mt-1.5 px-0.5">
-                <button
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-1 text-[10px] text-[var(--color-dim)] hover:text-[var(--color-fg)] transition-colors cursor-pointer"
-                  aria-label="上传文件"
-                >
-                  <Paperclip size={12} />
-                  <span>附件</span>
-                </button>
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  className="hidden"
-                  onChange={handleFileChange}
-                />
-                <span className="text-[10px] text-[var(--color-dim)]">Enter 发送 · Shift+Enter 换行</span>
-              </div>
+              <input ref={fileInputRef} type="file" multiple className="hidden" onChange={handleFileChange} />
             </div>
-
           </motion.div>
         )}
       </AnimatePresence>
-      {/* 图片放大 Lightbox */}
+
+      {/* Lightbox */}
       <AnimatePresence>
         {lightboxSrc && (
           <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
             transition={{ duration: reducedMotion ? 0 : 0.15 }}
-            className="fixed inset-0 z-[60] flex items-center justify-center bg-black/80 cursor-pointer p-4"
-            onClick={() => setLightboxSrc(null)}
+            className="chat-lightbox" onClick={() => setLightboxSrc(null)}
           >
-            <img
-              src={lightboxSrc}
-              className="max-w-full max-h-full rounded-lg object-contain"
-              alt="放大预览"
-            />
+            <img src={lightboxSrc} alt="预览" />
           </motion.div>
         )}
       </AnimatePresence>

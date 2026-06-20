@@ -35,6 +35,10 @@ export function App() {
   const [loading, setLoading] = useState(true)
   const [refreshKey, setRefreshKey] = useState(0)
   const [searchOpen, setSearchOpen] = useState(false)
+  const [showHidden] = useState(() => {
+    if (typeof window === 'undefined') return false
+    return new URLSearchParams(window.location.search).get('hidden') === 'true'
+  })
   const [theme, setTheme] = useState<'dark' | 'light' | 'auto'>(() => {
     if (typeof window === 'undefined') return 'auto'
     return (localStorage.getItem('theme') as 'dark' | 'light' | 'auto') || 'auto'
@@ -70,7 +74,7 @@ export function App() {
         const encodedPath = currentPath
           ? '/' + currentPath.split('/').map(s => encodeURIComponent(s)).join('/')
           : ''
-        const url = `/api/files${encodedPath}`
+        const url = `/api/files${encodedPath}${showHidden ? '?hidden=true' : ''}`
         const res = await fetch(url)
         if (res.ok) {
           const data = await res.json()

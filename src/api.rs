@@ -385,19 +385,23 @@ async fn handle_search(
 /// GET /api/files — 根目录文件列表 JSON
 async fn handle_files_api_root(
     State(state): State<Arc<ApiState>>,
+    query: axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Response {
-    handle_files_json(&state.cwd, "").await
+    let show_hidden = query.get("hidden").map(|v| v == "true").unwrap_or(false);
+    handle_files_json(&state.cwd, "", show_hidden).await
 }
 
 /// GET /api/files/*path — 文件/目录信息 JSON
 async fn handle_files_api(
     State(state): State<Arc<ApiState>>,
     Path(path): Path<String>,
+    query: axum::extract::Query<std::collections::HashMap<String, String>>,
 ) -> Response {
-    handle_files_json(&state.cwd, &path).await
+    let show_hidden = query.get("hidden").map(|v| v == "true").unwrap_or(false);
+    handle_files_json(&state.cwd, &path, show_hidden).await
 }
 
-async fn handle_files_json(root: &PathBuf, relative: &str) -> Response {
+async fn handle_files_json(root: &PathBuf, relative: &str, show_hidden: bool) -> Response {
     let decoded = urlencoding::decode(relative.trim_start_matches('/')).unwrap_or_default();
     let rel = decoded.as_ref();
 
@@ -420,7 +424,7 @@ async fn handle_files_json(root: &PathBuf, relative: &str) -> Response {
         if let Ok(read_dir) = std::fs::read_dir(&file_path) {
             for entry in read_dir.flatten() {
                 let name = entry.file_name().to_string_lossy().to_string();
-                if name.starts_with('.') { continue; }
+                if !show_hidden && name.starts_with('.') { continue; }
                 let is_dir = entry.file_type().map(|t| t.is_dir()).unwrap_or(false);
                 let ext = if is_dir {
                     String::new()
