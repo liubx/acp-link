@@ -96,7 +96,8 @@ export function App() {
   useEffect(() => {
     const urlPath = currentPath ? `/notes/${currentPath}` : '/notes'
     if (window.location.pathname !== urlPath) {
-      window.history.pushState(null, '', urlPath)
+      const search = window.location.search
+      window.history.pushState(null, '', urlPath + search)
     }
     // 动态更新页面标题和图标
     const name = currentPath ? currentPath.split('/').pop() || 'Notes' : 'Notes'
