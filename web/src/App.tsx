@@ -1,10 +1,11 @@
 import { useState, useEffect, useCallback, useRef } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { Sun, Moon, CircleHalf } from '@phosphor-icons/react'
+import { Sun, Moon, CircleHalf, ChatCircle, MagnifyingGlass } from '@phosphor-icons/react'
 import { SearchModal } from './components/SearchModal'
 import { FileList } from './components/FileList'
 import { FileViewer } from './components/FileViewer'
 import { ChatFab } from './components/ChatFab'
+import { ChatPage } from './components/ChatPage'
 import { Breadcrumb } from './components/Breadcrumb'
 
 // API 响应类型（匹配后端实际返回格式）
@@ -38,6 +39,10 @@ export function App() {
   const [showHidden] = useState(() => {
     if (typeof window === 'undefined') return false
     return new URLSearchParams(window.location.search).get('hidden') === 'true'
+  })
+  const [mode, setMode] = useState<'files' | 'chat'>(() => {
+    if (typeof window === 'undefined') return 'files'
+    return (localStorage.getItem('app-mode') as 'files' | 'chat') || 'files'
   })
   const [theme, setTheme] = useState<'dark' | 'light' | 'auto'>(() => {
     if (typeof window === 'undefined') return 'auto'
@@ -181,6 +186,17 @@ export function App() {
     return () => { if (progressTimer.current) clearTimeout(progressTimer.current) }
   }, [loading])
 
+  // 模式切换
+  const toggleMode = useCallback(() => {
+    const next = mode === 'files' ? 'chat' : 'files'
+    setMode(next)
+    localStorage.setItem('app-mode', next)
+  }, [mode])
+
+  if (mode === 'chat') {
+    return <ChatPage currentPath={currentPath} onSwitchMode={toggleMode} onNavigate={navigate} />
+  }
+
   return (
     <div className="min-h-screen flex flex-col">
       {/* 顶部进度条 */}
@@ -196,6 +212,14 @@ export function App() {
           <Breadcrumb currentPath={currentPath} onNavigate={navigate} />
           <div className="flex items-center gap-1.5">
             <button
+              onClick={toggleMode}
+              className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
+              aria-label="对话模式"
+              title="切换到对话模式"
+            >
+              <ChatCircle size={16} />
+            </button>
+            <button
               onClick={toggleTheme}
               className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
               aria-label="切换主题"
@@ -205,10 +229,11 @@ export function App() {
             </button>
             <button
               onClick={() => setSearchOpen(true)}
-              className="flex items-center gap-1.5 text-xs text-[var(--color-muted)] px-2.5 py-1.5 rounded-md border border-[var(--color-border)] hover:bg-[var(--color-surface)] hover:text-[var(--color-fg)] transition-colors cursor-pointer"
+              className="w-8 h-8 rounded-md flex items-center justify-center text-[var(--color-muted)] hover:text-[var(--color-fg)] hover:bg-[var(--color-surface)] transition-colors cursor-pointer"
               aria-label="搜索"
+              title="搜索 (⌘K)"
             >
-              <kbd className="font-mono text-[10px]">⌘K</kbd>
+              <MagnifyingGlass size={16} />
             </button>
           </div>
         </div>
