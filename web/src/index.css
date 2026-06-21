@@ -909,8 +909,8 @@ body {
   gap: 8px;
   background: var(--color-surface);
   border: 1px solid var(--color-border);
-  border-radius: 12px;
-  padding: 10px 10px 10px 16px;
+  border-radius: 10px;
+  padding: 6px 6px 6px 12px;
   transition: border-color 0.15s, box-shadow 0.15s;
 }
 .chat-page-composer__box:focus-within {
@@ -919,15 +919,16 @@ body {
 }
 .chat-page-input {
   flex: 1;
-  min-height: 24px;
+  min-height: 20px;
   max-height: 200px;
   overflow-y: auto;
-  font-size: 16px;
+  font-size: 14px;
   line-height: 1.5;
   color: var(--color-fg);
   outline: none;
   word-break: break-word;
   scrollbar-width: none;
+  padding: 4px 0;
 }
 .chat-page-input::-webkit-scrollbar { display: none; }
 .chat-page-input:empty::before {

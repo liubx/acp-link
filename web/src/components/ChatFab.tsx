@@ -534,7 +534,7 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
   }, [uploadFile, insertAttachment])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() }
     // Ctrl/Cmd+B 加粗
     if ((e.metaKey || e.ctrlKey) && e.key === 'b') { e.preventDefault(); document.execCommand('bold') }
     // Ctrl/Cmd+I 斜体

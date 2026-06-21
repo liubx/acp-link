@@ -284,7 +284,7 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
   const handleDrop = useCallback(async (e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragging(false); const files = e.dataTransfer.files; if (!files || files.length === 0) return; for (let i = 0; i < files.length; i++) { const att = await uploadFile(files[i]); if (att) insertAttachment(att) } }, [uploadFile, insertAttachment])
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
-    if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); send() }
+    if (e.key === 'Enter' && !e.shiftKey && !e.nativeEvent.isComposing) { e.preventDefault(); send() }
     if ((e.metaKey || e.ctrlKey) && e.key === 'b') { e.preventDefault(); document.execCommand('bold') }
     if ((e.metaKey || e.ctrlKey) && e.key === 'i') { e.preventDefault(); document.execCommand('italic') }
     if (e.key === 'Backspace') {
