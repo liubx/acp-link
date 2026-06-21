@@ -194,7 +194,7 @@ export function App() {
   }, [mode])
 
   if (mode === 'chat') {
-    return <ChatPage currentPath={currentPath} onSwitchMode={toggleMode} onNavigate={navigate} />
+    return <ChatPage currentPath={currentPath} onSwitchMode={toggleMode} onNavigate={navigate} onRefresh={() => setRefreshKey(k => k + 1)} />
   }
 
   return (
@@ -300,7 +300,7 @@ export function App() {
       />
 
       {/* 悬浮聊天按钮 */}
-      <ChatFab currentPath={currentPath} />
+      <ChatFab currentPath={currentPath} onRefresh={() => setRefreshKey(k => k + 1)} />
     </div>
   )
 }

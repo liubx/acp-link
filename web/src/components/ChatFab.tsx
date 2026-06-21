@@ -132,7 +132,7 @@ function UserMessageContent({ content }: { content: string }) {
 
 // --- 主组件 ---
 
-export function ChatFab({ currentPath }: { currentPath: string }) {
+export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRefresh?: () => void }) {
   const [open, setOpen] = useState(false)
   const [messages, setMessages] = useState<Message[]>([])
   const pathRef = useRef(currentPath)
@@ -437,6 +437,19 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
       if (reader) {
         setMessages(prev => [...prev, { role: 'bot', content: '', timestamp: Date.now() }])
         let buf = ''
+        let shouldRefresh = false
+        const viewingName = currentPath ? decodeURIComponent(currentPath.split('/').pop() || '') : ''
+        const viewingDir = currentPath || ''
+        // 判断 tool 内容是否是对当前文件/目录的写操作
+        const isWriteToViewing = (text: string) => {
+          if (!viewingName && !viewingDir) return false
+          const lower = text.toLowerCase()
+          const isWrite = /writ|creat|sav|updat|edit|modif|delet|remov|mov|renam|mkdir|cp |append/i.test(lower)
+          if (!isWrite) return false
+          if (viewingName && text.includes(viewingName)) return true
+          if (viewingDir && text.includes(viewingDir)) return true
+          return false
+        }
         while (true) {
           const { done, value } = await reader.read()
           if (done) break
@@ -457,6 +470,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
                 })
               } else if (ev.type === 'tool' && ev.content) {
                 setToolHint(ev.content)
+                if (isWriteToViewing(ev.content)) shouldRefresh = true
               } else if (ev.type === 'file') {
                 setToolHint('')
                 fullText += ev.is_image
@@ -469,6 +483,7 @@ export function ChatFab({ currentPath }: { currentPath: string }) {
                 })
               } else if (ev.type === 'done') {
                 setToolHint('')
+                if (shouldRefresh) onRefresh?.()
               }
             } catch { /* skip */ }
           }

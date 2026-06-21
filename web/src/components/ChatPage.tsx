@@ -78,7 +78,7 @@ function UserMessageContent({ content }: { content: string }) {
 }
 
 // --- 主组件 ---
-export function ChatPage({ currentPath, onSwitchMode, onNavigate }: { currentPath: string; onSwitchMode?: () => void; onNavigate?: (path: string) => void }) {
+export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: { currentPath: string; onSwitchMode?: () => void; onNavigate?: (path: string) => void; onRefresh?: () => void }) {
   const [messages, setMessages] = useState<Message[]>([])
   const pathRef = useRef(currentPath)
   const [loading, setLoading] = useState(false)
@@ -226,7 +226,15 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate }: { currentPat
       const res = await fetch('/api/ask', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ blocks, session, context_path: pinContext ? `/notes/${pinnedPath}` : `/notes/${currentPath}`, ...(pinContext && currentPath !== pinnedPath ? { ref_path: `/notes/${currentPath}` } : {}) }), signal: controller.signal })
       const reader = res.body?.getReader(); const decoder = new TextDecoder(); let fullText = ''
       if (reader) {
-        setMessages(prev => [...prev, { role: 'bot', content: '', timestamp: Date.now() }]); let buf = ''
+        setMessages(prev => [...prev, { role: 'bot', content: '', timestamp: Date.now() }]); let buf = ''; let shouldRefresh = false
+        const viewingName = currentPath ? decodeURIComponent(currentPath.split('/').pop() || '') : ''
+        const viewingDir = currentPath || ''
+        const isWriteToViewing = (text: string) => {
+          if (!viewingName && !viewingDir) return false
+          const isWrite = /writ|creat|sav|updat|edit|modif|delet|remov|mov|renam|mkdir|cp |append/i.test(text)
+          if (!isWrite) return false
+          return (viewingName && text.includes(viewingName)) || (viewingDir && text.includes(viewingDir))
+        }
         while (true) {
           const { done, value } = await reader.read(); if (done) break
           buf += decoder.decode(value, { stream: true }); const lines = buf.split('\n'); buf = lines.pop() || ''
@@ -235,9 +243,9 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate }: { currentPat
             try {
               const ev = JSON.parse(line.slice(6))
               if (ev.type === 'text' && ev.content) { setToolHint(''); fullText += ev.content; setMessages(prev => { const n = [...prev]; n[n.length - 1] = { role: 'bot', content: fullText }; return n }) }
-              else if (ev.type === 'tool' && ev.content) setToolHint(ev.content)
+              else if (ev.type === 'tool' && ev.content) { setToolHint(ev.content); if (isWriteToViewing(ev.content)) shouldRefresh = true }
               else if (ev.type === 'file') { setToolHint(''); fullText += ev.is_image ? `\n![${ev.name}](${ev.url})\n` : `\n[${ev.name}](${ev.url})\n`; setMessages(prev => { const n = [...prev]; n[n.length - 1] = { role: 'bot', content: fullText }; return n }) }
-              else if (ev.type === 'done') setToolHint('')
+              else if (ev.type === 'done') { setToolHint(''); if (shouldRefresh) onRefresh?.() }
             } catch {}
           }
         }
