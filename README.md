@@ -289,3 +289,14 @@ target_id   = "oc_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
 ## License
 
 MIT
+
+## 运行实例
+
+当前部署的 acp-link 实例：
+
+| 实例 | ACP_LINK_HOME | CWD (笔记根目录) | 用途 |
+|------|---------------|-------------------|------|
+| Yiyan's Vault | `/Users/liubx/Library/Mobile Documents/iCloud~md~obsidian/Documents/Yiyan's Vault/.acp-link` | Yiyan's Vault | 一言的笔记 AI 助手 |
+| Bingxin's Vault | `/Users/liubx/Library/Mobile Documents/iCloud~md~obsidian/Documents/Bingxin's Vault/.acp-link` | Bingxin's Vault | Bingxin 的笔记 AI 助手 |
+
+每个实例独立运行，拥有独立的配置、session、聊天记录和进程池。通过各自目录下的 `up.sh` / `down.sh` 管理启停。
