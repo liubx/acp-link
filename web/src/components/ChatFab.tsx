@@ -143,7 +143,7 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [pinContext, setPinContext] = useState(() => localStorage.getItem('chat-pin-context') === 'true')
   const [pinnedPath, setPinnedPath] = useState(() => localStorage.getItem('chat-pinned-path') || '')
-  const [chatMode, setChatMode] = useState<'personal' | 'shared'>(() => (localStorage.getItem('chat-mode') as 'personal' | 'shared') || 'personal')
+  const [chatMode, setChatMode] = useState<'personal' | 'shared'>(() => (localStorage.getItem('chat-mode') as 'personal' | 'shared') || 'shared')
   const abortRef = useRef<AbortController | null>(null)
   const messagesEnd = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
@@ -745,16 +745,16 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
                   {pinContext ? <Lock size={12} weight="bold" /> : <LockOpen size={12} />}
                 </button>
                 <button
-                  className={`chat-context-lock ${chatMode === 'shared' ? 'chat-context-lock--active' : ''}`}
+                  className={`chat-context-lock ${chatMode === 'personal' ? 'chat-context-lock--active' : ''}`}
                   onClick={() => {
                     const next = chatMode === 'personal' ? 'shared' : 'personal'
                     setChatMode(next)
                     localStorage.setItem('chat-mode', next)
                     loadMessages(pathRef.current)
                   }}
-                  title={chatMode === 'shared' ? '共享模式（点击切到个人）' : '个人模式（点击切到共享）'}
+                  title={chatMode === 'personal' ? '个人模式（点击切到共享）' : '共享模式（点击切到个人）'}
                 >
-                  {chatMode === 'shared' ? <UsersThree size={12} weight="bold" /> : <User size={12} />}
+                  {chatMode === 'personal' ? <User size={12} weight="bold" /> : <UsersThree size={12} />}
                 </button>
               </div>
               <div className="chat-composer__box">
