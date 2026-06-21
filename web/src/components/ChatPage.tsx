@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { PaperPlaneRight, Paperclip, Stop, Copy, Check, Lock, LockOpen, Notebook, Sun, Moon, CircleHalf, MagnifyingGlass } from '@phosphor-icons/react'
+import { PaperPlaneRight, Paperclip, Stop, Copy, Check, Lock, LockOpen, Notebook, Sun, Moon, CircleHalf, MagnifyingGlass, UsersThree, User } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { SearchModal } from './SearchModal'
@@ -88,6 +88,7 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [pinContext, setPinContext] = useState(() => localStorage.getItem('chat-pin-context') === 'true')
   const [pinnedPath, setPinnedPath] = useState(() => localStorage.getItem('chat-pinned-path') || '')
+  const [chatMode, setChatMode] = useState<'personal' | 'shared'>(() => (localStorage.getItem('chat-mode') as 'personal' | 'shared') || 'personal')
   const abortRef = useRef<AbortController | null>(null)
   const messagesEnd = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
@@ -121,18 +122,42 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
   useEffect(() => {
     if (pinContext) { pathRef.current = pinnedPath; return }
     pathRef.current = currentPath
-    const key = `chat-history:${currentPath || '/'}`
-    const hist = localStorage.getItem(key)
-    if (hist) { try { setMessages(JSON.parse(hist)) } catch { setMessages([]) } }
-    else { setMessages([]) }
-  }, [currentPath, pinContext, pinnedPath])
+    loadMessages(currentPath)
+  }, [currentPath, pinContext, pinnedPath, chatMode])
+
+  const loadMessages = useCallback(async (path: string) => {
+    if (chatMode === 'shared') {
+      try {
+        const res = await fetch(`/api/chat/history?path=${encodeURIComponent(path || '/')}`)
+        const data = await res.json()
+        setMessages(data.messages || [])
+      } catch { setMessages([]) }
+    } else {
+      const key = `chat-history:${path || '/'}`
+      const hist = localStorage.getItem(key)
+      if (hist) { try { setMessages(JSON.parse(hist)) } catch { setMessages([]) } }
+      else { setMessages([]) }
+    }
+  }, [chatMode])
+
+  const saveMessages = useCallback(async (msgs: Message[]) => {
+    const path = pathRef.current || '/'
+    if (chatMode === 'shared') {
+      try {
+        await fetch('/api/chat/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, messages: msgs.slice(-50) }),
+        })
+      } catch {}
+    } else {
+      localStorage.setItem(`chat-history:${path}`, JSON.stringify(msgs.slice(-30)))
+    }
+  }, [chatMode])
 
   useEffect(() => {
-    if (messages.length > 0) {
-      const key = `chat-history:${pathRef.current || '/'}`
-      localStorage.setItem(key, JSON.stringify(messages.slice(-30)))
-    }
-  }, [messages])
+    if (messages.length > 0) saveMessages(messages)
+  }, [messages, saveMessages])
 
   useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100) }, [])
 
@@ -411,6 +436,18 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
             title={pinContext ? '解锁上下文' : '锁定上下文'}
           >
             {pinContext ? <Lock size={12} weight="bold" /> : <LockOpen size={12} />}
+          </button>
+          <button
+            className={`chat-context-lock ${chatMode === 'shared' ? 'chat-context-lock--active' : ''}`}
+            onClick={() => {
+              const next = chatMode === 'personal' ? 'shared' : 'personal'
+              setChatMode(next)
+              localStorage.setItem('chat-mode', next)
+              loadMessages(pathRef.current)
+            }}
+            title={chatMode === 'shared' ? '共享模式（点击切到个人）' : '个人模式（点击切到共享）'}
+          >
+            {chatMode === 'shared' ? <UsersThree size={12} weight="bold" /> : <User size={12} />}
           </button>
         </div>
         <div className="chat-page-composer__box">

@@ -66,6 +66,8 @@ pub fn api_routes(bridge: AcpBridge, cwd: PathBuf) -> Router {
         .route("/api/ask", post(handle_ask))
         .route("/api/upload", post(handle_upload))
         .route("/api/search", get(handle_search))
+        .route("/api/chat/history", get(handle_chat_history_get))
+        .route("/api/chat/history", post(handle_chat_history_post))
         .route("/api/files/{*path}", get(handle_files_api))
         .route("/api/files", get(handle_files_api_root))
         .with_state(state)
@@ -748,4 +750,74 @@ async fn handle_ask(
         .header("access-control-allow-origin", "*")
         .body(Body::from_stream(stream))
         .unwrap()
+}
+
+/// 共享聊天记录存储目录
+fn chat_history_dir() -> PathBuf {
+    crate::config::AppConfig::data_dir()
+        .parent()
+        .unwrap_or(&PathBuf::from("."))
+        .join("chat")
+}
+
+/// 根据路径生成安全的文件名
+fn path_to_chat_filename(path: &str) -> String {
+    let clean = path.trim_start_matches('/').replace('/', "__");
+    if clean.is_empty() { "_root_.json".to_string() } else { format!("{clean}.json") }
+}
+
+/// GET /api/chat/history?path=xxx — 获取共享聊天记录
+async fn handle_chat_history_get(
+    query: axum::extract::Query<std::collections::HashMap<String, String>>,
+) -> Response {
+    let path = query.get("path").map(|s| s.as_str()).unwrap_or("");
+    let dir = chat_history_dir();
+    let file = dir.join(path_to_chat_filename(path));
+
+    if !file.exists() {
+        return Json(serde_json::json!({ "messages": [] })).into_response();
+    }
+
+    match std::fs::read_to_string(&file) {
+        Ok(content) => {
+            match serde_json::from_str::<serde_json::Value>(&content) {
+                Ok(val) => Json(val).into_response(),
+                Err(_) => Json(serde_json::json!({ "messages": [] })).into_response(),
+            }
+        }
+        Err(_) => Json(serde_json::json!({ "messages": [] })).into_response(),
+    }
+}
+
+/// POST /api/chat/history — 保存共享聊天记录
+/// Body: { "path": "xxx", "messages": [...] }
+async fn handle_chat_history_post(
+    body: String,
+) -> Response {
+    let parsed: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, "invalid json").into_response(),
+    };
+
+    let path = parsed.get("path").and_then(|v| v.as_str()).unwrap_or("");
+    let messages = parsed.get("messages");
+
+    if messages.is_none() {
+        return (StatusCode::BAD_REQUEST, "messages required").into_response();
+    }
+
+    let dir = chat_history_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    let file = dir.join(path_to_chat_filename(path));
+
+    let data = serde_json::json!({
+        "path": path,
+        "messages": messages,
+        "updated_at": chrono::Utc::now().to_rfc3339(),
+    });
+
+    match std::fs::write(&file, serde_json::to_string_pretty(&data).unwrap_or_default()) {
+        Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("write failed: {e}")).into_response(),
+    }
 }

@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { ChatCircle, PaperPlaneRight, X, Paperclip, Robot, Stop, Copy, Check, Lock, LockOpen } from '@phosphor-icons/react'
+import { ChatCircle, PaperPlaneRight, X, Paperclip, Robot, Stop, Copy, Check, Lock, LockOpen, UsersThree, User } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -143,36 +143,56 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null)
   const [pinContext, setPinContext] = useState(() => localStorage.getItem('chat-pin-context') === 'true')
   const [pinnedPath, setPinnedPath] = useState(() => localStorage.getItem('chat-pinned-path') || '')
+  const [chatMode, setChatMode] = useState<'personal' | 'shared'>(() => (localStorage.getItem('chat-mode') as 'personal' | 'shared') || 'personal')
   const abortRef = useRef<AbortController | null>(null)
   const messagesEnd = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
 
-  // 路径变化时切换对话（固定上下文时保持 pinned path 的 session）
+  // 路径变化时切换对话
   useEffect(() => {
-    if (pinContext) {
-      // 固定模式：pathRef 保持 pinnedPath，不切换对话
-      pathRef.current = pinnedPath
-      return
-    }
+    if (pinContext) { pathRef.current = pinnedPath; return }
     pathRef.current = currentPath
-    const key = `chat-history:${currentPath || '/'}`
-    const hist = localStorage.getItem(key)
-    if (hist) {
-      try { setMessages(JSON.parse(hist)) } catch { setMessages([]) }
+    loadMessages(currentPath)
+  }, [currentPath, pinContext, pinnedPath, chatMode])
+
+  // 加载消息（根据模式）
+  const loadMessages = useCallback(async (path: string) => {
+    if (chatMode === 'shared') {
+      try {
+        const res = await fetch(`/api/chat/history?path=${encodeURIComponent(path || '/')}`)
+        const data = await res.json()
+        setMessages(data.messages || [])
+      } catch { setMessages([]) }
     } else {
-      setMessages([])
+      const key = `chat-history:${path || '/'}`
+      const hist = localStorage.getItem(key)
+      if (hist) { try { setMessages(JSON.parse(hist)) } catch { setMessages([]) } }
+      else { setMessages([]) }
     }
-  }, [currentPath, pinContext, pinnedPath])
+  }, [chatMode])
+
+  // 保存消息（根据模式）
+  const saveMessages = useCallback(async (msgs: Message[]) => {
+    const path = pathRef.current || '/'
+    if (chatMode === 'shared') {
+      try {
+        await fetch('/api/chat/history', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ path, messages: msgs.slice(-50) }),
+        })
+      } catch {}
+    } else {
+      localStorage.setItem(`chat-history:${path}`, JSON.stringify(msgs.slice(-30)))
+    }
+  }, [chatMode])
 
   // 保存历史
   useEffect(() => {
-    if (messages.length > 0) {
-      const key = `chat-history:${pathRef.current || '/'}`
-      localStorage.setItem(key, JSON.stringify(messages.slice(-30)))
-    }
-  }, [messages])
+    if (messages.length > 0) saveMessages(messages)
+  }, [messages, saveMessages])
 
   useEffect(() => {
     if (open) setTimeout(() => inputRef.current?.focus(), 100)
@@ -723,6 +743,18 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
                   title={pinContext ? '解锁上下文' : '锁定上下文'}
                 >
                   {pinContext ? <Lock size={12} weight="bold" /> : <LockOpen size={12} />}
+                </button>
+                <button
+                  className={`chat-context-lock ${chatMode === 'shared' ? 'chat-context-lock--active' : ''}`}
+                  onClick={() => {
+                    const next = chatMode === 'personal' ? 'shared' : 'personal'
+                    setChatMode(next)
+                    localStorage.setItem('chat-mode', next)
+                    loadMessages(pathRef.current)
+                  }}
+                  title={chatMode === 'shared' ? '共享模式（点击切到个人）' : '个人模式（点击切到共享）'}
+                >
+                  {chatMode === 'shared' ? <UsersThree size={12} weight="bold" /> : <User size={12} />}
                 </button>
               </div>
               <div className="chat-composer__box">
