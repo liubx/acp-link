@@ -89,6 +89,8 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
   const [pinContext, setPinContext] = useState(() => localStorage.getItem('chat-pin-context') === 'true')
   const [pinnedPath, setPinnedPath] = useState(() => localStorage.getItem('chat-pinned-path') || '')
   const [chatMode, setChatMode] = useState<'personal' | 'shared'>(() => (localStorage.getItem('chat-mode') as 'personal' | 'shared') || 'shared')
+  const chatModeRef = useRef((localStorage.getItem('chat-mode') as 'personal' | 'shared') || 'shared')
+  useEffect(() => { chatModeRef.current = chatMode }, [chatMode])
   const abortRef = useRef<AbortController | null>(null)
   const messagesEnd = useRef<HTMLDivElement>(null)
   const inputRef = useRef<HTMLDivElement>(null)
@@ -126,11 +128,15 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
   }, [currentPath, pinContext, pinnedPath, chatMode])
 
   const loadMessages = useCallback(async (path: string) => {
-    if (chatMode === 'shared') {
+    const mode = chatModeRef.current
+    if (mode === 'shared') {
       try {
         const res = await fetch(`/api/chat/history?path=${encodeURIComponent(path || '/')}`)
         const data = await res.json()
         setMessages(data.messages || [])
+        if (data.session) {
+          localStorage.setItem(`chat-session:shared:${path || '/'}`, data.session)
+        }
       } catch { setMessages([]) }
     } else {
       const key = `chat-history:${path || '/'}`
@@ -138,28 +144,30 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
       if (hist) { try { setMessages(JSON.parse(hist)) } catch { setMessages([]) } }
       else { setMessages([]) }
     }
-  }, [chatMode])
+  }, [])
 
   const saveMessages = useCallback(async (msgs: Message[]) => {
+    const mode = chatModeRef.current
     const path = pathRef.current || '/'
-    if (chatMode === 'shared') {
+    if (mode === 'shared') {
+      const session = localStorage.getItem(`chat-session:shared:${path}`) || ''
       try {
         await fetch('/api/chat/history', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ path, messages: msgs.slice(-50) }),
+          body: JSON.stringify({ path, messages: msgs.slice(-50), session }),
         })
       } catch {}
     } else {
       localStorage.setItem(`chat-history:${path}`, JSON.stringify(msgs.slice(-30)))
     }
-  }, [chatMode])
+  }, [])
 
   useEffect(() => {
     if (messages.length > 0) saveMessages(messages)
   }, [messages, saveMessages])
 
-  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100) }, [])
+  useEffect(() => { setTimeout(() => inputRef.current?.focus(), 100); loadMessages(pathRef.current) }, [])
 
   const handleScroll = useCallback(() => {
     const el = messagesContainerRef.current
@@ -233,8 +241,9 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
 
   const clearChat = useCallback(() => {
     setMessages([]); const ctxPath = pinContext ? pinnedPath : currentPath
-    localStorage.removeItem(`chat-history:${ctxPath || '/'}`); localStorage.removeItem(`chat-session:${ctxPath || '/'}`); setToolHint('')
-  }, [currentPath, pinContext, pinnedPath])
+    const prefix = chatMode === 'shared' ? 'shared' : 'personal'
+    localStorage.removeItem(`chat-history:${ctxPath || '/'}`); localStorage.removeItem(`chat-session:${prefix}:${ctxPath || '/'}`); setToolHint('')
+  }, [currentPath, pinContext, pinnedPath, chatMode])
 
   const send = async () => {
     const blocks = extractBlocks(); if (blocks.length === 0 || loading) return
@@ -244,7 +253,8 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
     setMessages(prev => [...prev, { role: 'user', content, attachments, timestamp: Date.now() }]); setLoading(true)
     try {
       const ctxPath = pinContext ? pinnedPath : currentPath
-      const sessionKey = `chat-session:${ctxPath || '/'}`
+      const sessionPrefix = chatMode === 'shared' ? 'shared' : 'personal'
+      const sessionKey = `chat-session:${sessionPrefix}:${ctxPath || '/'}`
       const session = localStorage.getItem(sessionKey) || `web-${Math.random().toString(36).slice(2, 10)}`
       if (!localStorage.getItem(sessionKey)) localStorage.setItem(sessionKey, session)
       const controller = new AbortController(); abortRef.current = controller
@@ -442,6 +452,7 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
             onClick={() => {
               const next = chatMode === 'personal' ? 'shared' : 'personal'
               setChatMode(next)
+              chatModeRef.current = next
               localStorage.setItem('chat-mode', next)
               loadMessages(pathRef.current)
             }}

@@ -813,6 +813,7 @@ async fn handle_chat_history_post(
     let data = serde_json::json!({
         "path": path,
         "messages": messages,
+        "session": parsed.get("session").and_then(|v| v.as_str()).unwrap_or(""),
         "updated_at": chrono::Utc::now().to_rfc3339(),
     });
 
