@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { motion, AnimatePresence, useReducedMotion } from 'motion/react'
-import { ChatCircle, PaperPlaneRight, X, Paperclip, Robot, Stop, Copy, Check, Lock, LockOpen, UsersThree, User } from '@phosphor-icons/react'
+import { ChatCircle, PaperPlaneRight, X, Paperclip, Robot, Stop, Copy, Check, Lock, LockOpen, UsersThree, User, ArrowClockwise } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 
@@ -17,12 +17,23 @@ interface Message {
   content: string
   attachments?: Attachment[]
   timestamp?: number
+  failed?: boolean
 }
 
 interface ChatBlock {
   type: string
   content: string
   name?: string
+}
+
+// --- 时间格式化 ---
+function formatMsgTime(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  if (isToday) return time
+  return `${d.getMonth() + 1}/${d.getDate()} ${time}`
 }
 
 // --- 代码块组件（带复制按钮）---
@@ -130,6 +141,25 @@ function UserMessageContent({ content }: { content: string }) {
   )
 }
 
+// --- 消息复制按钮 ---
+function MessageCopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+    } else {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px'
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+      setCopied(true); setTimeout(() => setCopied(false), 1500)
+    }
+  }
+  return (
+    <button onClick={handleCopy} className="chat-msg-copy" aria-label="复制消息" title="复制">
+      {copied ? <Check size={12} weight="bold" className="text-green-500" /> : <Copy size={12} />}
+    </button>
+  )
+}
+
 // --- 主组件 ---
 
 export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRefresh?: () => void }) {
@@ -151,6 +181,48 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
   const inputRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
+
+  // 输入框内容保留
+  const inputStorageKey = `chat-fab-draft:${currentPath || '/'}`
+  useEffect(() => {
+    if (open) {
+      const draft = sessionStorage.getItem(inputStorageKey)
+      if (draft && inputRef.current && !inputRef.current.innerHTML) {
+        inputRef.current.innerHTML = draft
+        setInputEmpty(false)
+        // 光标移到末尾
+        setTimeout(() => {
+          const sel = window.getSelection()
+          if (sel && inputRef.current) { sel.selectAllChildren(inputRef.current); sel.collapseToEnd() }
+        }, 0)
+      }
+    }
+  }, [open, inputStorageKey])
+  // 关闭时保存草稿
+  useEffect(() => {
+    if (!open) {
+      // open 刚变 false 时保存
+      const el = inputRef.current
+      if (el) {
+        const html = el.innerHTML
+        if (html && html !== '<br>') sessionStorage.setItem(inputStorageKey, html)
+        else sessionStorage.removeItem(inputStorageKey)
+      }
+    }
+  }, [open, inputStorageKey])
+  // 页面卸载时也保存
+  useEffect(() => {
+    const saveDraft = () => {
+      const el = inputRef.current
+      if (el && open) {
+        const html = el.innerHTML
+        if (html && html !== '<br>') sessionStorage.setItem(inputStorageKey, html)
+        else sessionStorage.removeItem(inputStorageKey)
+      }
+    }
+    window.addEventListener('beforeunload', saveDraft)
+    return () => window.removeEventListener('beforeunload', saveDraft)
+  }, [inputStorageKey, open])
 
   // 路径变化时切换对话
   useEffect(() => {
@@ -422,25 +494,36 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
   }, [])
 
   // --- 发送 ---
-  const send = async () => {
-    const blocks = extractBlocks()
-    if (blocks.length === 0 || loading) return
+  const send = async (retryContent?: string) => {
+    let blocks: ChatBlock[]
+    let content: string
+    let attachments: Attachment[]
 
-    if (inputRef.current) inputRef.current.innerHTML = ''
-    setInputEmpty(true)
+    if (retryContent) {
+      content = retryContent
+      blocks = [{ type: 'text', content: retryContent }]
+      attachments = []
+    } else {
+      blocks = extractBlocks()
+      if (blocks.length === 0 || loading) return
+      if (inputRef.current) inputRef.current.innerHTML = ''
+      setInputEmpty(true)
+      sessionStorage.removeItem(inputStorageKey)
 
-    const content = blocks.map(b => {
-      if (b.type === 'text') return b.content
-      if (b.type === 'image') return `![](${b.content})`
-      if (b.type === 'file') return `[${b.name || 'file'}](${b.content})`
-      return ''
-    }).join('\n')
+      content = blocks.map(b => {
+        if (b.type === 'text') return b.content
+        if (b.type === 'image') return `![](${b.content})`
+        if (b.type === 'file') return `[${b.name || 'file'}](${b.content})`
+        return ''
+      }).join('\n')
 
-    const attachments: Attachment[] = blocks
-      .filter(b => b.type === 'image' || b.type === 'file')
-      .map(b => ({ name: b.name || '', path: b.content, type: b.type as 'image' | 'file' }))
+      attachments = blocks
+        .filter(b => b.type === 'image' || b.type === 'file')
+        .map(b => ({ name: b.name || '', path: b.content, type: b.type as 'image' | 'file' }))
 
-    setMessages(prev => [...prev, { role: 'user', content, attachments, timestamp: Date.now() }])
+      setMessages(prev => [...prev, { role: 'user', content, attachments, timestamp: Date.now() }])
+    }
+
     setLoading(true)
 
     try {
@@ -500,7 +583,8 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
                 fullText += ev.content
                 setMessages(prev => {
                   const next = [...prev]
-                  next[next.length - 1] = { role: 'bot', content: fullText }
+                  const last = next[next.length - 1]
+                  next[next.length - 1] = { ...last, content: fullText }
                   return next
                 })
               } else if (ev.type === 'tool' && ev.content) {
@@ -513,7 +597,8 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
                   : `\n[${ev.name}](${ev.url})\n`
                 setMessages(prev => {
                   const next = [...prev]
-                  next[next.length - 1] = { role: 'bot', content: fullText }
+                  const last = next[next.length - 1]
+                  next[next.length - 1] = { ...last, content: fullText }
                   return next
                 })
               } else if (ev.type === 'done') {
@@ -523,10 +608,18 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
             } catch { /* skip */ }
           }
         }
+        // 流结束后检查是否有内容
+        if (!fullText.trim()) {
+          setMessages(prev => {
+            const next = [...prev]
+            next[next.length - 1] = { role: 'bot', content: '⚠️ 未收到回复，请重试。', failed: true }
+            return next
+          })
+        }
       }
     } catch (e) {
       if ((e as Error).name !== 'AbortError') {
-        setMessages(prev => [...prev, { role: 'bot', content: `请求失败: ${e}`, timestamp: Date.now() }])
+        setMessages(prev => [...prev, { role: 'bot', content: `请求失败: ${(e as Error).message || e}`, failed: true, timestamp: Date.now() }])
       }
     } finally {
       setLoading(false)
@@ -534,6 +627,18 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
       abortRef.current = null
     }
   }
+
+  // 重试
+  const retry = useCallback(() => {
+    setMessages(prev => {
+      const lastUserIdx = prev.map((m, i) => ({ m, i })).filter(x => x.m.role === 'user').pop()?.i
+      if (lastUserIdx === undefined) return prev
+      const userMsg = prev[lastUserIdx]
+      const next = prev.slice(0, lastUserIdx + 1)
+      setTimeout(() => send(userMsg.content), 0)
+      return next
+    })
+  }, [pinContext, pinnedPath, currentPath, chatMode])
 
   // --- 拖拽 ---
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragging(true) }, [])
@@ -702,11 +807,26 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
                         <span className="chat-tool-text">{toolHint}</span>
                       </div>
                     )}
-                    {msg.timestamp && (
-                      <time className={`chat-msg-time ${msg.role === 'user' ? 'chat-msg-time--right' : ''}`}>
-                        {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                      </time>
+                    {/* 重试按钮 */}
+                    {msg.failed && !loading && (
+                      <button onClick={retry} className="chat-retry-btn" title="重试">
+                        <ArrowClockwise size={12} /> 重试
+                      </button>
                     )}
+                    {/* 底部：复制 + 时间 */}
+                    <div className={`chat-msg-footer ${msg.role === 'user' ? 'chat-msg-footer--right' : ''}`}>
+                      {msg.role === 'bot' && msg.content && !(loading && i === messages.length - 1) && (
+                        <MessageCopyBtn text={msg.content} />
+                      )}
+                      {msg.timestamp && (
+                        <time className="chat-msg-time">
+                          {formatMsgTime(msg.timestamp)}
+                        </time>
+                      )}
+                      {msg.role === 'user' && msg.content && (
+                        <MessageCopyBtn text={msg.content} />
+                      )}
+                    </div>
                   </div>
                 </div>
               ))}
@@ -801,7 +921,7 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
                       <Stop size={13} weight="fill" />
                     </button>
                   ) : (
-                    <button onClick={send} disabled={inputEmpty} className="chat-send-btn" aria-label="发送">
+                    <button onClick={() => send()} disabled={inputEmpty} className="chat-send-btn" aria-label="发送">
                       <PaperPlaneRight size={13} weight="bold" />
                     </button>
                   )}

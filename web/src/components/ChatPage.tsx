@@ -1,6 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react'
 import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
-import { PaperPlaneRight, Paperclip, Stop, Copy, Check, Lock, LockOpen, Notebook, Sun, Moon, CircleHalf, MagnifyingGlass, UsersThree, User } from '@phosphor-icons/react'
+import { PaperPlaneRight, Paperclip, Stop, Copy, Check, Lock, LockOpen, Notebook, Sun, Moon, CircleHalf, MagnifyingGlass, UsersThree, User, ArrowClockwise } from '@phosphor-icons/react'
 import ReactMarkdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { SearchModal } from './SearchModal'
@@ -8,8 +8,19 @@ import { Breadcrumb } from './Breadcrumb'
 
 // --- 类型 ---
 interface Attachment { name: string; path: string; type: 'image' | 'file' }
-interface Message { role: 'user' | 'bot'; content: string; attachments?: Attachment[]; timestamp?: number }
+interface Message { role: 'user' | 'bot'; content: string; attachments?: Attachment[]; timestamp?: number; failed?: boolean }
 interface ChatBlock { type: string; content: string; name?: string }
+
+// --- 时间格式化：当天只显示时间，非当天显示日期+时间 ---
+function formatMsgTime(ts: number): string {
+  const d = new Date(ts)
+  const now = new Date()
+  const isToday = d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate()
+  const time = d.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })
+  if (isToday) return time
+  const date = `${d.getMonth() + 1}/${d.getDate()}`
+  return `${date} ${time}`
+}
 
 // --- 代码块 ---
 function CodeBlock({ className, children }: { className?: string; children: React.ReactNode }) {
@@ -77,6 +88,25 @@ function UserMessageContent({ content }: { content: string }) {
   )
 }
 
+// --- 消息复制按钮 ---
+function MessageCopyBtn({ text }: { text: string }) {
+  const [copied, setCopied] = useState(false)
+  const handleCopy = () => {
+    if (navigator.clipboard && window.isSecureContext) {
+      navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 1500) })
+    } else {
+      const ta = document.createElement('textarea'); ta.value = text; ta.style.position = 'fixed'; ta.style.left = '-9999px'
+      document.body.appendChild(ta); ta.select(); document.execCommand('copy'); document.body.removeChild(ta)
+      setCopied(true); setTimeout(() => setCopied(false), 1500)
+    }
+  }
+  return (
+    <button onClick={handleCopy} className="chat-msg-copy" aria-label="复制消息" title="复制">
+      {copied ? <Check size={12} weight="bold" className="text-green-500" /> : <Copy size={12} />}
+    </button>
+  )
+}
+
 // --- 主组件 ---
 export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: { currentPath: string; onSwitchMode?: () => void; onNavigate?: (path: string) => void; onRefresh?: () => void }) {
   const [messages, setMessages] = useState<Message[]>([])
@@ -96,6 +126,33 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
   const inputRef = useRef<HTMLDivElement>(null)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
+
+  // 输入框内容保留（关闭/刷新时保存，打开时恢复）
+  const inputStorageKey = `chat-input-draft:${currentPath || '/'}`
+  useEffect(() => {
+    // 恢复草稿
+    const draft = sessionStorage.getItem(inputStorageKey)
+    if (draft && inputRef.current && !inputRef.current.innerHTML) {
+      inputRef.current.innerHTML = draft
+      setInputEmpty(false)
+      // 光标移到末尾
+      const sel = window.getSelection()
+      if (sel) { sel.selectAllChildren(inputRef.current); sel.collapseToEnd() }
+    }
+  }, [inputStorageKey])
+  // 页面卸载时保存草稿
+  useEffect(() => {
+    const saveDraft = () => {
+      const el = inputRef.current
+      if (el) {
+        const html = el.innerHTML
+        if (html && html !== '<br>') sessionStorage.setItem(inputStorageKey, html)
+        else sessionStorage.removeItem(inputStorageKey)
+      }
+    }
+    window.addEventListener('beforeunload', saveDraft)
+    return () => { saveDraft(); window.removeEventListener('beforeunload', saveDraft) }
+  }, [inputStorageKey])
   const [theme, setTheme] = useState<'dark' | 'light' | 'auto'>(() => {
     if (typeof window === 'undefined') return 'auto'
     return (localStorage.getItem('theme') as 'dark' | 'light' | 'auto') || 'auto'
@@ -245,12 +302,27 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
     localStorage.removeItem(`chat-history:${ctxPath || '/'}`); localStorage.removeItem(`chat-session:${prefix}:${ctxPath || '/'}`); setToolHint('')
   }, [currentPath, pinContext, pinnedPath, chatMode])
 
-  const send = async () => {
-    const blocks = extractBlocks(); if (blocks.length === 0 || loading) return
-    if (inputRef.current) inputRef.current.innerHTML = ''; setInputEmpty(true)
-    const content = blocks.map(b => b.type === 'text' ? b.content : b.type === 'image' ? `![](${b.content})` : `[${b.name || 'file'}](${b.content})`).join('\n')
-    const attachments: Attachment[] = blocks.filter(b => b.type === 'image' || b.type === 'file').map(b => ({ name: b.name || '', path: b.content, type: b.type as 'image' | 'file' }))
-    setMessages(prev => [...prev, { role: 'user', content, attachments, timestamp: Date.now() }]); setLoading(true)
+  const send = async (retryContent?: string) => {
+    let blocks: ChatBlock[]
+    let content: string
+    let attachments: Attachment[]
+
+    if (retryContent) {
+      // 重试模式：直接使用传入的内容
+      content = retryContent
+      blocks = [{ type: 'text', content: retryContent }]
+      attachments = []
+    } else {
+      blocks = extractBlocks(); if (blocks.length === 0 || loading) return
+      if (inputRef.current) inputRef.current.innerHTML = ''; setInputEmpty(true)
+      // 清除草稿
+      sessionStorage.removeItem(inputStorageKey)
+      content = blocks.map(b => b.type === 'text' ? b.content : b.type === 'image' ? `![](${b.content})` : `[${b.name || 'file'}](${b.content})`).join('\n')
+      attachments = blocks.filter(b => b.type === 'image' || b.type === 'file').map(b => ({ name: b.name || '', path: b.content, type: b.type as 'image' | 'file' }))
+      setMessages(prev => [...prev, { role: 'user', content, attachments, timestamp: Date.now() }])
+    }
+
+    setLoading(true)
     try {
       const ctxPath = pinContext ? pinnedPath : currentPath
       const sessionPrefix = chatMode === 'shared' ? 'shared' : 'personal'
@@ -277,17 +349,40 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
             if (!line.startsWith('data: ')) continue
             try {
               const ev = JSON.parse(line.slice(6))
-              if (ev.type === 'text' && ev.content) { setToolHint(''); fullText += ev.content; setMessages(prev => { const n = [...prev]; n[n.length - 1] = { role: 'bot', content: fullText }; return n }) }
+              if (ev.type === 'text' && ev.content) { setToolHint(''); fullText += ev.content; setMessages(prev => { const n = [...prev]; const last = n[n.length - 1]; n[n.length - 1] = { ...last, content: fullText }; return n }) }
               else if (ev.type === 'tool' && ev.content) { setToolHint(ev.content); if (isWriteToViewing(ev.content)) shouldRefresh = true }
-              else if (ev.type === 'file') { setToolHint(''); fullText += ev.is_image ? `\n![${ev.name}](${ev.url})\n` : `\n[${ev.name}](${ev.url})\n`; setMessages(prev => { const n = [...prev]; n[n.length - 1] = { role: 'bot', content: fullText }; return n }) }
+              else if (ev.type === 'file') { setToolHint(''); fullText += ev.is_image ? `\n![${ev.name}](${ev.url})\n` : `\n[${ev.name}](${ev.url})\n`; setMessages(prev => { const n = [...prev]; const last = n[n.length - 1]; n[n.length - 1] = { ...last, content: fullText }; return n }) }
               else if (ev.type === 'done') { setToolHint(''); if (shouldRefresh) onRefresh?.() }
             } catch {}
           }
         }
+        // 流结束后检查是否有内容
+        if (!fullText.trim()) {
+          setMessages(prev => { const n = [...prev]; n[n.length - 1] = { role: 'bot', content: '⚠️ 未收到回复，请重试。', failed: true }; return n })
+        }
       }
-    } catch (e) { if ((e as Error).name !== 'AbortError') setMessages(prev => [...prev, { role: 'bot', content: `请求失败: ${e}`, timestamp: Date.now() }]) }
+    } catch (e) {
+      if ((e as Error).name !== 'AbortError') {
+        setMessages(prev => [...prev, { role: 'bot', content: `请求失败: ${(e as Error).message || e}`, failed: true, timestamp: Date.now() }])
+      }
+    }
     finally { setLoading(false); setToolHint(''); abortRef.current = null }
   }
+
+  // 重试：移除失败的 bot 消息，重新发送
+  const retry = useCallback(() => {
+    setMessages(prev => {
+      // 找到最后一条 user 消息
+      const lastUserIdx = prev.map((m, i) => ({ m, i })).filter(x => x.m.role === 'user').pop()?.i
+      if (lastUserIdx === undefined) return prev
+      const userMsg = prev[lastUserIdx]
+      // 移除该 user 消息之后的所有 bot 消息
+      const next = prev.slice(0, lastUserIdx + 1)
+      // 下一个 tick 重新发送
+      setTimeout(() => send(userMsg.content), 0)
+      return next
+    })
+  }, [pinContext, pinnedPath, currentPath, chatMode])
 
   const handleDragOver = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragging(true) }, [])
   const handleDragLeave = useCallback((e: React.DragEvent) => { e.preventDefault(); e.stopPropagation(); setDragging(false) }, [])
@@ -405,11 +500,26 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
                 {loading && i === messages.length - 1 && msg.role === 'bot' && toolHint && (
                   <div className="chat-tool-hint"><span className="chat-spinner" /><span className="chat-tool-text">{toolHint}</span></div>
                 )}
-                {msg.timestamp && (
-                  <time className={`chat-msg-time ${msg.role === 'user' ? 'chat-msg-time--right' : ''}`}>
-                    {new Date(msg.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}
-                  </time>
+                {/* 重试按钮 */}
+                {msg.failed && !loading && (
+                  <button onClick={retry} className="chat-retry-btn" title="重试">
+                    <ArrowClockwise size={12} /> 重试
+                  </button>
                 )}
+                {/* 底部：复制 + 时间 */}
+                <div className={`chat-msg-footer ${msg.role === 'user' ? 'chat-msg-footer--right' : ''}`}>
+                  {msg.role === 'bot' && msg.content && !(loading && i === messages.length - 1) && (
+                    <MessageCopyBtn text={msg.content} />
+                  )}
+                  {msg.timestamp && (
+                    <time className="chat-msg-time">
+                      {formatMsgTime(msg.timestamp)}
+                    </time>
+                  )}
+                  {msg.role === 'user' && msg.content && (
+                    <MessageCopyBtn text={msg.content} />
+                  )}
+                </div>
               </div>
             </div>
           ))}
@@ -481,7 +591,7 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
             {loading ? (
               <button onClick={stopGeneration} className="chat-page-send chat-page-send--stop" aria-label="停止"><Stop size={16} weight="fill" /></button>
             ) : (
-              <button onClick={send} disabled={inputEmpty} className="chat-page-send" aria-label="发送"><PaperPlaneRight size={16} weight="bold" /></button>
+              <button onClick={() => send()} disabled={inputEmpty} className="chat-page-send" aria-label="发送"><PaperPlaneRight size={16} weight="bold" /></button>
             )}
           </div>
         </div>

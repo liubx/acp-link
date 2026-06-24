@@ -533,21 +533,64 @@ body {
   color: var(--color-muted);
 }
 
-/* 时间戳 */
-.chat-msg-time {
-  display: block;
-  font-size: 10px;
+/* 消息复制按钮 */
+.chat-msg-copy {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
   color: var(--color-dim);
+  background: transparent;
+  border: none;
+  transition: color 0.15s, background 0.15s;
+  cursor: pointer;
+}
+.chat-msg-copy:hover {
+  color: var(--color-fg);
+  background: var(--color-border);
+}
+
+/* 重试按钮 */
+.chat-retry-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--color-accent);
+  border: 1px solid var(--color-accent);
+  border-radius: 12px;
+  background: transparent;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+.chat-retry-btn:hover {
+  background: var(--color-accent-dim);
+  color: var(--color-fg);
+}
+
+/* 消息底部行：时间 + 复制 */
+.chat-msg-footer {
+  display: flex;
+  align-items: center;
+  gap: 4px;
   margin-top: 3px;
-  padding: 0 2px;
   opacity: 0;
   transition: opacity 0.15s;
 }
-.chat-msg-time--right {
-  text-align: right;
+.chat-msg-footer--right {
+  justify-content: flex-end;
 }
-.group:hover .chat-msg-time {
+.group:hover .chat-msg-footer {
   opacity: 1;
+}
+.chat-msg-time {
+  font-size: 10px;
+  color: var(--color-dim);
+  padding: 0 2px;
 }
 .chat-composer__box {
   display: flex;

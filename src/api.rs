@@ -70,6 +70,10 @@ pub fn api_routes(bridge: AcpBridge, cwd: PathBuf) -> Router {
         .route("/api/chat/history", post(handle_chat_history_post))
         .route("/api/files/{*path}", get(handle_files_api))
         .route("/api/files", get(handle_files_api_root))
+        .route("/api/fs/create", post(handle_fs_create))
+        .route("/api/fs/rename", post(handle_fs_rename))
+        .route("/api/fs/delete", post(handle_fs_delete))
+        .route("/api/fs/upload", post(handle_fs_upload))
         .with_state(state)
         .layer(axum::extract::DefaultBodyLimit::max(50 * 1024 * 1024))
         .fallback_service(NotesService { root: cwd })
@@ -836,4 +840,239 @@ async fn handle_chat_history_post(
         Ok(_) => Json(serde_json::json!({ "ok": true })).into_response(),
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, format!("write failed: {e}")).into_response(),
     }
+}
+
+// ========== 文件管理 API ==========
+
+/// POST /api/fs/create — 创建文件或文件夹
+/// Body: { "path": "相对路径", "is_dir": bool }
+async fn handle_fs_create(
+    State(state): State<Arc<ApiState>>,
+    body: String,
+) -> Response {
+    let parsed: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "invalid json"}))).into_response(),
+    };
+
+    let rel_path = match parsed.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "path required"}))).into_response(),
+    };
+    let is_dir = parsed.get("is_dir").and_then(|v| v.as_bool()).unwrap_or(false);
+
+    let target = state.cwd.join(rel_path);
+
+    // 安全检查
+    let abs_root = std::fs::canonicalize(&state.cwd).unwrap_or(state.cwd.clone());
+    // 目标可能不存在，检查其父目录
+    if let Some(parent) = target.parent() {
+        if parent.exists() {
+            let abs_parent = std::fs::canonicalize(parent).unwrap_or(parent.to_path_buf());
+            if !abs_parent.starts_with(&abs_root) {
+                return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "forbidden"}))).into_response();
+            }
+        }
+    }
+
+    if target.exists() {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({"error": "already exists"}))).into_response();
+    }
+
+    if is_dir {
+        if let Err(e) = std::fs::create_dir_all(&target) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("{e}")}))).into_response();
+        }
+    } else {
+        // 确保父目录存在
+        if let Some(parent) = target.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        if let Err(e) = std::fs::write(&target, "") {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("{e}")}))).into_response();
+        }
+    }
+
+    Json(serde_json::json!({"ok": true})).into_response()
+}
+
+/// POST /api/fs/rename — 重命名文件或文件夹
+/// Body: { "path": "原路径", "new_name": "新名称" }
+async fn handle_fs_rename(
+    State(state): State<Arc<ApiState>>,
+    body: String,
+) -> Response {
+    let parsed: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "invalid json"}))).into_response(),
+    };
+
+    let rel_path = match parsed.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "path required"}))).into_response(),
+    };
+    let new_name = match parsed.get("new_name").and_then(|v| v.as_str()) {
+        Some(n) => n,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "new_name required"}))).into_response(),
+    };
+
+    // 文件名安全检查
+    if new_name.contains('/') || new_name.contains('\\') || new_name == "." || new_name == ".." {
+        return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "invalid name"}))).into_response();
+    }
+
+    let source = state.cwd.join(rel_path);
+    let target = source.parent().unwrap_or(&state.cwd).join(new_name);
+
+    // 安全检查
+    let abs_root = std::fs::canonicalize(&state.cwd).unwrap_or(state.cwd.clone());
+    if source.exists() {
+        let abs_source = std::fs::canonicalize(&source).unwrap_or(source.clone());
+        if !abs_source.starts_with(&abs_root) {
+            return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "forbidden"}))).into_response();
+        }
+    } else {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "not found"}))).into_response();
+    }
+
+    if target.exists() {
+        return (StatusCode::CONFLICT, Json(serde_json::json!({"error": "target already exists"}))).into_response();
+    }
+
+    if let Err(e) = std::fs::rename(&source, &target) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("{e}")}))).into_response();
+    }
+
+    Json(serde_json::json!({"ok": true})).into_response()
+}
+
+/// POST /api/fs/delete — 删除文件或文件夹
+/// Body: { "path": "相对路径" }
+async fn handle_fs_delete(
+    State(state): State<Arc<ApiState>>,
+    body: String,
+) -> Response {
+    let parsed: serde_json::Value = match serde_json::from_str(&body) {
+        Ok(v) => v,
+        Err(_) => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "invalid json"}))).into_response(),
+    };
+
+    let rel_path = match parsed.get("path").and_then(|v| v.as_str()) {
+        Some(p) => p,
+        None => return (StatusCode::BAD_REQUEST, Json(serde_json::json!({"error": "path required"}))).into_response(),
+    };
+
+    let target = state.cwd.join(rel_path);
+
+    // 安全检查
+    let abs_root = std::fs::canonicalize(&state.cwd).unwrap_or(state.cwd.clone());
+    if target.exists() {
+        let abs_target = std::fs::canonicalize(&target).unwrap_or(target.clone());
+        if !abs_target.starts_with(&abs_root) {
+            return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "forbidden"}))).into_response();
+        }
+    } else {
+        return (StatusCode::NOT_FOUND, Json(serde_json::json!({"error": "not found"}))).into_response();
+    }
+
+    // 不允许删除根目录
+    if rel_path.is_empty() || rel_path == "/" {
+        return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "cannot delete root"}))).into_response();
+    }
+
+    let result = if target.is_dir() {
+        std::fs::remove_dir_all(&target)
+    } else {
+        std::fs::remove_file(&target)
+    };
+
+    match result {
+        Ok(_) => Json(serde_json::json!({"ok": true})).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("{e}")}))).into_response(),
+    }
+}
+
+/// POST /api/fs/upload — 上传文件到指定目录
+/// Headers: X-Filename (文件名), X-Dir (目标目录相对路径，可选，默认根目录)
+async fn handle_fs_upload(
+    State(state): State<Arc<ApiState>>,
+    headers: axum::http::HeaderMap,
+    body: axum::body::Bytes,
+) -> Response {
+    // 目标目录
+    let dir_rel = headers.get("x-dir")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| urlencoding::decode(s).unwrap_or_default().to_string())
+        .unwrap_or_default();
+
+    // 文件名
+    let filename = headers.get("x-filename")
+        .and_then(|v| v.to_str().ok())
+        .map(|s| urlencoding::decode(s).unwrap_or_default().to_string())
+        .unwrap_or_else(|| format!("upload-{}", uuid::Uuid::new_v4()));
+
+    let safe_name = filename.replace('/', "_").replace('\\', "_");
+
+    // 目标目录路径
+    let target_dir = if dir_rel.is_empty() {
+        state.cwd.clone()
+    } else {
+        state.cwd.join(&dir_rel)
+    };
+
+    // 安全检查
+    let abs_root = std::fs::canonicalize(&state.cwd).unwrap_or(state.cwd.clone());
+    if target_dir.exists() {
+        let abs_dir = std::fs::canonicalize(&target_dir).unwrap_or(target_dir.clone());
+        if !abs_dir.starts_with(&abs_root) {
+            return (StatusCode::FORBIDDEN, Json(serde_json::json!({"error": "forbidden"}))).into_response();
+        }
+    } else {
+        // 目录不存在则创建
+        if let Err(e) = std::fs::create_dir_all(&target_dir) {
+            return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("mkdir: {e}")}))).into_response();
+        }
+    }
+
+    // 如果目标文件已存在，加序号避免覆盖
+    let mut final_name = safe_name.clone();
+    let mut file_path = target_dir.join(&final_name);
+    if file_path.exists() {
+        let stem = std::path::Path::new(&safe_name)
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or(&safe_name)
+            .to_string();
+        let ext = std::path::Path::new(&safe_name)
+            .extension()
+            .and_then(|s| s.to_str())
+            .map(|s| format!(".{s}"))
+            .unwrap_or_default();
+        let mut i = 1u32;
+        loop {
+            final_name = format!("{stem}_{i}{ext}");
+            file_path = target_dir.join(&final_name);
+            if !file_path.exists() { break; }
+            i += 1;
+            if i > 999 { break; } // 安全上限
+        }
+    }
+
+    if let Err(e) = std::fs::write(&file_path, &body) {
+        return (StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({"error": format!("write: {e}")}))).into_response();
+    }
+
+    // 返回相对路径
+    let rel_path = if dir_rel.is_empty() {
+        final_name.clone()
+    } else {
+        format!("{}/{}", dir_rel, final_name)
+    };
+
+    Json(serde_json::json!({
+        "ok": true,
+        "name": final_name,
+        "path": rel_path,
+        "size": body.len(),
+    })).into_response()
 }
