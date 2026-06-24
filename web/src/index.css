@@ -302,7 +302,8 @@ body {
   line-height: 1.6;
   padding: 4px 0;
   min-width: 0;
-  overflow-x: auto;
+  overflow-x: hidden;
+  overflow-y: visible;
 }
 .chat-bubble__md.markdown-body {
   font-size: 13px;

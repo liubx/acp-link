@@ -704,23 +704,38 @@ async fn handle_ask(
     // SSE stream — 同时监听 ACP 流和 web_send_file 事件
     let mut file_rx = web_file_sender().subscribe();
     let target_session = chat_id.clone();
+    let sessions_for_stream = state.clone();
+    let chat_id_for_stream = chat_id.clone();
     let stream = async_stream::stream! {
         let mut rx = rx;
+        let mut got_content = false;
         loop {
             tokio::select! {
                 biased;
                 event = rx.recv() => {
                     match event {
                         Some(StreamEvent::Text(t)) => {
+                            got_content = true;
                             let data = serde_json::json!({"type": "text", "content": t});
                             yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", data));
                         }
                         Some(StreamEvent::ToolCall(t)) => {
+                            got_content = true;
                             let data = serde_json::json!({"type": "tool", "content": t});
                             yield Ok::<_, std::convert::Infallible>(format!("data: {}\n\n", data));
                         }
                         None => {
                             // ACP 流结束
+                            if !got_content {
+                                // 没有收到任何内容就结束了 — prompt 可能失败
+                                // 清除 session 让下次重建
+                                sessions_for_stream.sessions.write().await.remove(&chat_id_for_stream);
+                                let err_data = serde_json::json!({
+                                    "type": "text",
+                                    "content": "⚠️ 连接中断，请重试。如果问题持续，请尝试「新对话」。"
+                                });
+                                yield Ok(format!("data: {}\n\n", err_data));
+                            }
                             break;
                         }
                     }
