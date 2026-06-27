@@ -591,7 +591,7 @@ async fn handle_ask(
     };
     let _session_guard = session_mutex.lock().await;
 
-    // 获取或创建 session
+    // 获取或创建 session（带重试，应对 worker busy）
     let session_id = {
         let sessions = state.sessions.read().await;
         sessions.get(&chat_id).cloned()
@@ -599,19 +599,47 @@ async fn handle_ask(
 
     let session_id = match session_id {
         Some(sid) => {
-            let _ = state.bridge.load_session(&chat_id, &sid, state.cwd.clone()).await;
+            // load_session 带重试
+            let mut retries = 0u32;
+            loop {
+                match state.bridge.load_session(&chat_id, &sid, state.cwd.clone()).await {
+                    Ok(_) => break,
+                    Err(e) if retries < 3 && format!("{e}").contains("正在处理") => {
+                        retries += 1;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500 * u64::from(retries))).await;
+                    }
+                    Err(_) => break, // 非 busy 错误忽略，后续 prompt 可能仍能工作
+                }
+            }
             sid
         }
         None => {
-            match state.bridge.new_session(&chat_id, state.cwd.clone()).await {
-                Ok(sid) => {
+            // new_session 带重试
+            let mut retries = 0u32;
+            let mut last_err = String::new();
+            let sid = loop {
+                match state.bridge.new_session(&chat_id, state.cwd.clone()).await {
+                    Ok(sid) => break Some(sid),
+                    Err(e) if retries < 5 && format!("{e}").contains("正在处理") => {
+                        retries += 1;
+                        last_err = format!("{e}");
+                        tokio::time::sleep(tokio::time::Duration::from_millis(500 * u64::from(retries))).await;
+                    }
+                    Err(e) => {
+                        last_err = format!("{e}");
+                        break None;
+                    }
+                }
+            };
+            match sid {
+                Some(sid) => {
                     state.sessions.write().await.insert(chat_id.clone(), sid.clone());
                     sid
                 }
-                Err(e) => {
+                None => {
                     return (
                         StatusCode::INTERNAL_SERVER_ERROR,
-                        format!("Failed to create session: {e}"),
+                        format!("Failed to create session: {last_err}"),
                     ).into_response();
                 }
             }
@@ -712,15 +740,24 @@ async fn handle_ask(
         }
     }
 
-    // 发送 prompt 并获取流
-    let rx = match state.bridge.prompt_stream(&chat_id, &session_id, blocks).await {
-        Ok(rx) => rx,
-        Err(e) => {
-            state.sessions.write().await.remove(&chat_id);
-            return (
-                StatusCode::INTERNAL_SERVER_ERROR,
-                format!("Prompt failed: {e}"),
-            ).into_response();
+    // 发送 prompt 并获取流（带重试）
+    let rx = {
+        let mut retries = 0u32;
+        loop {
+            match state.bridge.prompt_stream(&chat_id, &session_id, blocks.clone()).await {
+                Ok(rx) => break rx,
+                Err(e) if retries < 3 && format!("{e}").contains("正在处理") => {
+                    retries += 1;
+                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * u64::from(retries))).await;
+                }
+                Err(e) => {
+                    state.sessions.write().await.remove(&chat_id);
+                    return (
+                        StatusCode::INTERNAL_SERVER_ERROR,
+                        format!("Prompt failed: {e}"),
+                    ).into_response();
+                }
+            }
         }
     };
 
