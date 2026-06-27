@@ -120,6 +120,8 @@ impl WechatChannel {
     fn spawn_listener(&self, account_id: String, client: WechatClient, tx: mpsc::Sender<ImMessage>) -> tokio::task::JoinHandle<anyhow::Result<()>> {
         let contexts = self.user_contexts.clone();
         let recent = self.recent_messages.clone();
+        let typing_active = self.typing_active.clone();
+        let typing_tickets = self.typing_tickets.clone();
         tokio::spawn(async move {
             tracing::info!("[{account_id}] 开始监听");
             let (inner_tx, mut inner_rx) = mpsc::channel::<ParsedWechatMessage>(256);
@@ -127,6 +129,9 @@ impl WechatChannel {
             let fwd_ctx = contexts;
             let fwd_recent = recent;
             let fwd_id = account_id.clone();
+            let fwd_client = client.clone();
+            let fwd_typing_active = typing_active;
+            let fwd_typing_tickets = typing_tickets;
             let fwd = tokio::spawn(async move {
                 // 延迟窗口：收到文字后等 2 秒看有没有附件一起来
                 let mut pending_text: Option<ParsedWechatMessage> = None;
@@ -160,6 +165,41 @@ impl WechatChannel {
                         if let Some(prev) = pending_text.take() {
                             process_and_forward(&prev, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
                         }
+
+                        // 立即发 typing（不等 2 秒聚合结束）
+                        // 在 spawn 前读取所有需要的值，避免 spawn 内的锁等待
+                        let uid = msg.from_user_id.clone();
+                        let cached_ticket = fwd_typing_tickets.read().await.get(&uid).cloned();
+                        if let Some(ticket) = cached_ticket {
+                            // ticket 已缓存：预读 base_url/token，spawn 里零锁调用
+                            let c = fwd_client.clone();
+                            let base_url = c.base_url().await;
+                            let token = c.token().await;
+                            let uid2 = uid.clone();
+                            let ta = fwd_typing_active.clone();
+                            tokio::spawn(async move {
+                                let _ = c.send_typing_direct(&base_url, token.as_deref(), &uid2, &ticket, 1).await;
+                                ta.write().await.insert(uid2, true);
+                            });
+                        } else {
+                            // 首次：需要 HTTP 获取 ticket，然后发 typing
+                            let ct = msg.context_token.clone();
+                            let c = fwd_client.clone();
+                            let uid2 = uid.clone();
+                            let ta = fwd_typing_active.clone();
+                            let tt = fwd_typing_tickets.clone();
+                            tokio::spawn(async move {
+                                match c.get_typing_ticket(&uid2, &ct).await {
+                                    Ok(Some(t)) => {
+                                        tt.write().await.insert(uid2.clone(), t.clone());
+                                        let _ = c.send_typing(&uid2, &t, 1).await;
+                                        ta.write().await.insert(uid2, true);
+                                    }
+                                    _ => {}
+                                }
+                            });
+                        }
+
                         // 缓冲新文字，等 2 秒看有没有附件跟着
                         pending_text = Some(msg);
                     } else {
@@ -234,42 +274,32 @@ impl IMChannel for WechatChannel {
 
     async fn reply_message(&self, message_id: &str, _markdown: &str) -> anyhow::Result<(String, String)> {
         let (uid, _) = parse_mid(message_id);
-        // 后台持续发 typing 直到 update_message 被调用
-        if let Ok((c, ct)) = self.resolve_client(&uid).await {
-            let c2 = c.clone();
-            let uid2 = uid.clone();
-            let ct2 = ct.clone();
-            let typing_active = self.typing_active.clone();
-            let typing_tickets = self.typing_tickets.clone();
-            let key = uid.clone();
-            typing_active.write().await.insert(key.clone(), true);
-
-            tokio::spawn(async move {
-                // 获取或缓存 typing_ticket
-                let ticket = {
-                    let cached = typing_tickets.read().await.get(&uid2).cloned();
-                    if let Some(t) = cached {
-                        t
-                    } else {
-                        match c2.get_typing_ticket(&uid2, &ct2).await {
-                            Ok(Some(t)) => {
-                                typing_tickets.write().await.insert(uid2.clone(), t.clone());
-                                t
-                            }
-                            _ => return,
-                        }
-                    }
-                };
-                // 立即发第一次 typing
-                let _ = c2.send_typing(&uid2, &ticket, 1).await;
-                // 持续刷新（每 10 秒）
-                loop {
-                    tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
-                    let active = typing_active.read().await.get(&key).copied().unwrap_or(false);
-                    if !active { break; }
-                    let _ = c2.send_typing(&uid2, &ticket, 1).await;
+        // typing 已在 listener 层提前发出，这里只确保后台刷新循环在跑
+        if let Ok((c, _ct)) = self.resolve_client(&uid).await {
+            let is_active = self.typing_active.read().await.get(&uid).copied().unwrap_or(false);
+            if !is_active {
+                // 如果 listener 层没提前发（例如非文本触发的场景），这里补发
+                let ticket = self.typing_tickets.read().await.get(&uid).cloned();
+                if let Some(ref t) = ticket {
+                    let _ = c.send_typing(&uid, t, 1).await;
                 }
-            });
+                self.typing_active.write().await.insert(uid.clone(), true);
+                let c2 = c.clone();
+                let uid2 = uid.clone();
+                let ticket2 = ticket.unwrap_or_default();
+                let typing_active = self.typing_active.clone();
+                let key = uid.clone();
+                if !ticket2.is_empty() {
+                    tokio::spawn(async move {
+                        loop {
+                            tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+                            let active = typing_active.read().await.get(&key).copied().unwrap_or(false);
+                            if !active { break; }
+                            let _ = c2.send_typing(&uid2, &ticket2, 1).await;
+                        }
+                    });
+                }
+            }
         }
         let new_msg_id = format!("{uid}:reply");
         Ok((new_msg_id, uid))

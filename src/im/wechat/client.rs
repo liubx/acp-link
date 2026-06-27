@@ -325,6 +325,16 @@ impl WechatClient {
         }
     }
 
+    /// 读取 base_url（快照）
+    pub async fn base_url(&self) -> String {
+        self.base_url.read().await.clone()
+    }
+
+    /// 读取 token（快照）
+    pub async fn token(&self) -> Option<String> {
+        self.token.read().await.clone()
+    }
+
     /// 创建未登录的客户端（用于扫码登录）
     pub fn new_unauthenticated(store: TokenStore) -> Self {
         Self {
@@ -672,6 +682,11 @@ impl WechatClient {
     pub async fn send_typing(&self, to_user_id: &str, typing_ticket: &str, status: u32) -> Result<()> {
         let base_url = self.base_url.read().await.clone();
         let token = self.token.read().await.clone();
+        self.send_typing_direct(&base_url, token.as_deref(), to_user_id, typing_ticket, status).await
+    }
+
+    /// 发送打字状态（预读好的 base_url/token，避免锁）
+    pub async fn send_typing_direct(&self, base_url: &str, token: Option<&str>, to_user_id: &str, typing_ticket: &str, status: u32) -> Result<()> {
         let url = format!("{}/ilink/bot/sendtyping", base_url.trim_end_matches('/'));
         let body = serde_json::json!({
             "base_info": { "channel_version": CHANNEL_VERSION },
@@ -679,8 +694,8 @@ impl WechatClient {
             "typing_ticket": typing_ticket,
             "status": status
         });
-        self.http.post(&url).headers(self.build_headers(token.as_deref())).json(&body)
-            .timeout(std::time::Duration::from_secs(10))
+        self.http.post(&url).headers(self.build_headers(token)).json(&body)
+            .timeout(std::time::Duration::from_secs(5))
             .send().await?;
         Ok(())
     }
