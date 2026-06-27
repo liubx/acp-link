@@ -555,6 +555,25 @@ async fn handle_upload(
         .unwrap()
 }
 
+/// 客户端断开时自动 cancel ACP prompt 的 Drop guard
+struct CancelOnDrop {
+    bridge: AcpBridge,
+    routing_key: String,
+    session_id: String,
+}
+
+impl Drop for CancelOnDrop {
+    fn drop(&mut self) {
+        let bridge = self.bridge.clone();
+        let rk = self.routing_key.clone();
+        let sid = self.session_id.clone();
+        // spawn cancel（Drop 中不能 await，用 spawn 异步执行）
+        tokio::spawn(async move {
+            let _ = bridge.cancel(&rk, &sid).await;
+        });
+    }
+}
+
 /// POST /api/ask — SSE 流式问答
 async fn handle_ask(
     State(state): State<Arc<ApiState>>,
@@ -591,7 +610,7 @@ async fn handle_ask(
     };
     let _session_guard = session_mutex.lock().await;
 
-    // 获取或创建 session（带重试，应对 worker busy）
+    // 获取或创建 session（带重试，应对 worker busy，最长等 60 秒）
     let session_id = {
         let sessions = state.sessions.read().await;
         sessions.get(&chat_id).cloned()
@@ -599,31 +618,27 @@ async fn handle_ask(
 
     let session_id = match session_id {
         Some(sid) => {
-            // load_session 带重试
-            let mut retries = 0u32;
+            let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(60);
             loop {
                 match state.bridge.load_session(&chat_id, &sid, state.cwd.clone()).await {
                     Ok(_) => break,
-                    Err(e) if retries < 3 && format!("{e}").contains("正在处理") => {
-                        retries += 1;
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500 * u64::from(retries))).await;
+                    Err(e) if format!("{e}").contains("正在处理") && tokio::time::Instant::now() < deadline => {
+                        tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
                     }
-                    Err(_) => break, // 非 busy 错误忽略，后续 prompt 可能仍能工作
+                    Err(_) => break,
                 }
             }
             sid
         }
         None => {
-            // new_session 带重试
-            let mut retries = 0u32;
+            let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(60);
             let mut last_err = String::new();
             let sid = loop {
                 match state.bridge.new_session(&chat_id, state.cwd.clone()).await {
                     Ok(sid) => break Some(sid),
-                    Err(e) if retries < 5 && format!("{e}").contains("正在处理") => {
-                        retries += 1;
+                    Err(e) if format!("{e}").contains("正在处理") && tokio::time::Instant::now() < deadline => {
                         last_err = format!("{e}");
-                        tokio::time::sleep(tokio::time::Duration::from_millis(500 * u64::from(retries))).await;
+                        tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
                     }
                     Err(e) => {
                         last_err = format!("{e}");
@@ -740,15 +755,14 @@ async fn handle_ask(
         }
     }
 
-    // 发送 prompt 并获取流（带重试）
+    // 发送 prompt 并获取流（带重试，最长等 60 秒）
     let rx = {
-        let mut retries = 0u32;
+        let deadline = tokio::time::Instant::now() + tokio::time::Duration::from_secs(60);
         loop {
             match state.bridge.prompt_stream(&chat_id, &session_id, blocks.clone()).await {
                 Ok(rx) => break rx,
-                Err(e) if retries < 3 && format!("{e}").contains("正在处理") => {
-                    retries += 1;
-                    tokio::time::sleep(tokio::time::Duration::from_millis(500 * u64::from(retries))).await;
+                Err(e) if format!("{e}").contains("正在处理") && tokio::time::Instant::now() < deadline => {
+                    tokio::time::sleep(tokio::time::Duration::from_millis(800)).await;
                 }
                 Err(e) => {
                     state.sessions.write().await.remove(&chat_id);
@@ -762,10 +776,14 @@ async fn handle_ask(
     };
 
     // SSE stream — 同时监听 ACP 流和 web_send_file 事件
+    // 客户端断开时自动 cancel ACP prompt
     let mut file_rx = web_file_sender().subscribe();
     let target_session = chat_id.clone();
     let sessions_for_stream = state.clone();
     let chat_id_for_stream = chat_id.clone();
+    let bridge_for_cancel = state.bridge.clone();
+    let routing_key_for_cancel = chat_id.clone();
+    let session_id_for_cancel = session_id.clone();
     let stream = async_stream::stream! {
         let mut rx = rx;
         let mut got_content = false;
@@ -787,8 +805,6 @@ async fn handle_ask(
                         None => {
                             // ACP 流结束
                             if !got_content {
-                                // 没有收到任何内容就结束了 — prompt 可能失败
-                                // 清除 session 让下次重建
                                 sessions_for_stream.sessions.write().await.remove(&chat_id_for_stream);
                                 let err_data = serde_json::json!({
                                     "type": "text",
@@ -818,12 +834,29 @@ async fn handle_ask(
         yield Ok(format!("data: {}\n\n", serde_json::json!({"type": "done"})));
     };
 
+    // 用 Drop guard 实现：stream 被 drop（客户端断开）时自动 cancel
+    let cancel_on_drop = CancelOnDrop {
+        bridge: bridge_for_cancel,
+        routing_key: routing_key_for_cancel,
+        session_id: session_id_for_cancel,
+    };
+
+    let body_stream = async_stream::stream! {
+        let _guard = cancel_on_drop;
+        let inner = stream;
+        tokio::pin!(inner);
+        use futures::StreamExt;
+        while let Some(item) = inner.next().await {
+            yield item;
+        }
+    };
+
     Response::builder()
         .status(StatusCode::OK)
         .header("content-type", "text/event-stream")
         .header("cache-control", "no-cache")
         .header("access-control-allow-origin", "*")
-        .body(Body::from_stream(stream))
+        .body(Body::from_stream(body_stream))
         .unwrap()
 }
 
