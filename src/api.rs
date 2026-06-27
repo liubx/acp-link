@@ -52,6 +52,8 @@ struct ApiState {
     cwd: PathBuf,
     /// chat_id → acp_session_id
     sessions: RwLock<HashMap<String, String>>,
+    /// per-session 锁：同一 session 的请求串行执行
+    session_locks: RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
 }
 
 /// 启动 API HTTP Server（与 MCP Server 共用端口，由调用方合并路由）
@@ -60,6 +62,7 @@ pub fn api_routes(bridge: AcpBridge, cwd: PathBuf) -> Router {
         bridge,
         cwd: cwd.clone(),
         sessions: RwLock::new(HashMap::new()),
+        session_locks: RwLock::new(HashMap::new()),
     });
 
     Router::new()
@@ -571,6 +574,22 @@ async fn handle_ask(
     if question.trim().is_empty() {
         return (StatusCode::BAD_REQUEST, "question is required").into_response();
     }
+
+    // per-session 锁：同一 session 的请求排队执行
+    let session_mutex = {
+        let read_guard = state.session_locks.read().await;
+        if let Some(m) = read_guard.get(&chat_id) {
+            m.clone()
+        } else {
+            drop(read_guard);
+            let mut write_guard = state.session_locks.write().await;
+            write_guard
+                .entry(chat_id.clone())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        }
+    };
+    let _session_guard = session_mutex.lock().await;
 
     // 获取或创建 session
     let session_id = {
