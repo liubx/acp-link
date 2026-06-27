@@ -64,6 +64,8 @@ struct SharedState {
     loaded_sessions: RwLock<HashSet<String>>,
     /// 增量模式下每个 thread 尚未投递给 agent 的附件
     pending_attachments: RwLock<HashMap<String, Vec<PendingAttachment>>>,
+    /// 每个 thread 的处理锁，确保同一 thread 的消息串行处理（避免并发 prompt 导致 worker busy 错误）
+    thread_locks: RwLock<HashMap<String, Arc<tokio::sync::Mutex<()>>>>,
     /// 需要中止的 reply_message_id 集合（表情回复触发）
     abort_set: RwLock<HashSet<String>>,
     /// 消息去重：最近处理过的 message_id
@@ -134,6 +136,7 @@ impl LinkService {
                 session_map: RwLock::new(session_map),
                 loaded_sessions: RwLock::new(HashSet::new()),
                 pending_attachments: RwLock::new(HashMap::new()),
+                thread_locks: RwLock::new(HashMap::new()),
                 abort_set: RwLock::new(HashSet::new()),
                 processed_messages: RwLock::new(std::collections::VecDeque::new()),
                 cwd,
@@ -320,6 +323,38 @@ fn cleanup_temp_dir(retention: u32) -> Result<usize> {
     Ok(removed)
 }
 
+/// 获取或创建 per-thread 锁
+///
+/// 返回 (lock_guard, was_contended)：
+/// - lock_guard: 持有锁时 drop 释放
+/// - was_contended: true 表示获取时有竞争（另一个 prompt 正在执行）
+async fn acquire_thread_lock(state: &SharedState, thread_id: &str) -> (tokio::sync::OwnedMutexGuard<()>, bool) {
+    // 获取或创建该 thread 的锁
+    let mutex = {
+        let read_guard = state.thread_locks.read().await;
+        if let Some(m) = read_guard.get(thread_id) {
+            m.clone()
+        } else {
+            drop(read_guard);
+            let mut write_guard = state.thread_locks.write().await;
+            write_guard
+                .entry(thread_id.to_owned())
+                .or_insert_with(|| Arc::new(tokio::sync::Mutex::new(())))
+                .clone()
+        }
+    };
+
+    // 先尝试无阻塞获取
+    match mutex.clone().try_lock_owned() {
+        Ok(guard) => (guard, false),
+        Err(_) => {
+            // 有竞争，等待获取
+            let guard = mutex.lock_owned().await;
+            (guard, true)
+        }
+    }
+}
+
 /// 处理单条 IM 消息：根据是否有 topic 上下文决定新建会话或增量追加
 async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
     // 消息去重
@@ -376,8 +411,10 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
                         tracing::error!("持久化 thread 映射失败: {e}");
                     }
                     if is_actionable && !is_link {
+                        let (lock_guard, _) = acquire_thread_lock(&state, &thread_id).await;
                         stream_acp_reply(&state, &thread_id, &msg.chat_id, &reply_msg_id, &msg)
                             .await;
+                        drop(lock_guard);
                     }
                 }
                 Err(e) => tracing::error!("创建消息话题失败: {e}"),
@@ -393,6 +430,12 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
             match thread_id {
                 Some(thread_id) => {
                     if is_actionable {
+                        let (lock_guard, was_contended) = acquire_thread_lock(&state, &thread_id).await;
+                        if was_contended {
+                            // 锁有竞争说明上一条消息还在处理中，先通知用户
+                            tracing::info!("[{}] thread={} 消息排队：上一条仍在处理中", msg.chat_id, thread_id);
+                            let _ = state.channel.reply_message(&msg.message_id, "正在处理上一条消息，请稍候...").await;
+                        }
                         submit_to_acp_streaming(
                             &state,
                             &thread_id,
@@ -401,6 +444,7 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
                             &msg,
                         )
                         .await;
+                        drop(lock_guard);
                     } else {
                         // 仅当 session 已建立（即后续会走增量路径）时才入队。
                         // 若 session 未建立，后续首条文字指令会触发 aggregate_topic
@@ -446,6 +490,7 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
                                 tracing::error!("持久化 thread 映射失败: {e}");
                             }
                             if is_actionable && !is_link {
+                                let (lock_guard, _) = acquire_thread_lock(&state, &thread_id).await;
                                 stream_acp_reply(
                                     &state,
                                     &thread_id,
@@ -454,6 +499,7 @@ async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
                                     &msg,
                                 )
                                 .await;
+                                drop(lock_guard);
                             }
                         }
                         Err(e) => tracing::error!("创建消息话题失败: {e}"),

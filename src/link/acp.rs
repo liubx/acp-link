@@ -266,9 +266,21 @@ async fn acp_event_loop(
                                         }
                                     }
                                 }
-                                Some(_other) => {
-                                    // prompt 期间收到非 cancel 命令，忽略（不应发生）
-                                    tracing::warn!("[worker-{worker_id}] prompt 期间收到非 cancel 命令，忽略");
+                                Some(other) => {
+                                    // prompt 期间收到非 cancel 命令：返回明确错误（而非 drop reply 导致误报“工作线程已退出”）
+                                    tracing::warn!("[worker-{worker_id}] prompt 期间收到非 cancel 命令，返回 busy 错误");
+                                    match other {
+                                        AcpCommand::NewSession { reply, .. } => {
+                                            let _ = reply.send(Err(anyhow::anyhow!("worker 正在处理其他请求")));
+                                        }
+                                        AcpCommand::LoadSession { reply, .. } => {
+                                            let _ = reply.send(Err(anyhow::anyhow!("worker 正在处理其他请求")));
+                                        }
+                                        AcpCommand::Prompt { reply, .. } => {
+                                            let _ = reply.send(Err(anyhow::anyhow!("worker 正在处理其他请求")));
+                                        }
+                                        AcpCommand::Cancel { .. } => unreachable!(),
+                                    }
                                 }
                                 None => {
                                     // cmd_rx 关闭，等 prompt 结束
