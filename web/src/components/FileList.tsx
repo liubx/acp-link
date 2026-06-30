@@ -9,7 +9,7 @@ const TEXT_EXTENSIONS = new Set([
   'tsx', 'jsx', 'html', 'css', 'scss', 'sh', 'bash', 'zsh', 'fish',
   'go', 'java', 'c', 'cpp', 'h', 'hpp', 'rb', 'php', 'swift', 'kt',
   'lua', 'vim', 'conf', 'ini', 'env', 'xml', 'svg', 'sql', 'graphql',
-  'dockerfile', 'makefile', 'gitignore', 'lock',
+  'dockerfile', 'makefile', 'gitignore', 'lock', 'csv',
   // 图片
   'png', 'jpg', 'jpeg', 'gif', 'webp', 'ico', 'bmp',
   // PDF

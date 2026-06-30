@@ -164,6 +164,8 @@ export function FileViewer({ fileInfo, onBack, onRefresh }: Props) {
         <MarkdownContent content={fileInfo.content} filePath={fileInfo.path} />
       ) : isCode && fileInfo.content && (ext === 'html' || ext === 'htm') ? (
         <HtmlViewer content={fileInfo.content} />
+      ) : isCode && fileInfo.content && ext === 'csv' ? (
+        <CsvTable content={fileInfo.content} />
       ) : isCode && fileInfo.content ? (
         <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)]">
           <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center justify-between">
@@ -364,5 +366,110 @@ function CopyButton({ text }: { text: string }) {
     >
       {copied ? <Check size={14} weight="bold" className="text-green-500" /> : <Copy size={14} />}
     </button>
+  )
+}
+
+// CSV 表格组件（带正则过滤）
+function CsvTable({ content }: { content: string }) {
+  const [filter, setFilter] = useState('')
+  const [filterError, setFilterError] = useState(false)
+
+  const { headers, rows } = useMemo(() => {
+    const lines = content.split('\n').filter(l => l.trim())
+    if (lines.length === 0) return { headers: [], rows: [] }
+
+    const parseLine = (line: string): string[] => {
+      const result: string[] = []
+      let current = ''
+      let inQuotes = false
+      for (let i = 0; i < line.length; i++) {
+        const ch = line[i]
+        if (ch === '"') {
+          inQuotes = !inQuotes
+        } else if (ch === ',' && !inQuotes) {
+          result.push(current.trim())
+          current = ''
+        } else {
+          current += ch
+        }
+      }
+      result.push(current.trim())
+      return result
+    }
+
+    const headers = parseLine(lines[0])
+    const rows = lines.slice(1).map(parseLine)
+    return { headers, rows }
+  }, [content])
+
+  // 过滤行（支持正则）
+  const filteredRows = useMemo(() => {
+    if (!filter.trim()) {
+      setFilterError(false)
+      return rows
+    }
+    try {
+      const regex = new RegExp(filter, 'i')
+      setFilterError(false)
+      return rows.filter(row => row.some(cell => regex.test(cell)))
+    } catch {
+      setFilterError(true)
+      return rows
+    }
+  }, [rows, filter])
+
+  if (headers.length === 0) {
+    return <div className="py-8 text-center text-[var(--color-dim)]">空 CSV</div>
+  }
+
+  return (
+    <div className="border border-[var(--color-border)] rounded-lg overflow-hidden bg-[var(--color-surface)]">
+      <div className="px-4 py-2 border-b border-[var(--color-border)] flex items-center gap-3">
+        <input
+          type="text"
+          value={filter}
+          onChange={e => setFilter(e.target.value)}
+          placeholder="过滤 (支持正则)..."
+          className={`flex-1 text-[13px] px-2.5 py-1.5 rounded-md border bg-[var(--color-bg)] text-[var(--color-fg)] placeholder:text-[var(--color-dim)] outline-none transition-colors ${
+            filterError ? 'border-red-500' : 'border-[var(--color-border)] focus:border-[var(--color-accent)]'
+          }`}
+        />
+        <span className="text-[10px] text-[var(--color-dim)] font-mono whitespace-nowrap">
+          {filteredRows.length}/{rows.length} 行
+        </span>
+        <CopyButton text={[headers.join(','), ...filteredRows.map(r => r.join(','))].join('\n')} />
+      </div>
+      <div className="overflow-x-auto max-h-[70vh]">
+        <table className="w-full text-[13px] border-collapse">
+          <thead className="sticky top-0 z-10">
+            <tr className="bg-[var(--color-bg)]">
+              {headers.map((h, i) => (
+                <th key={i} className="px-3 py-2 text-left font-semibold text-[var(--color-muted)] border-b border-[var(--color-border)] whitespace-nowrap">
+                  {h}
+                </th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {filteredRows.map((row, i) => (
+              <tr key={i} className="hover:bg-[var(--color-bg)] transition-colors">
+                {headers.map((_, j) => (
+                  <td key={j} className="px-3 py-1.5 text-[var(--color-fg)] border-b border-[var(--color-border)] whitespace-nowrap">
+                    {row[j] || ''}
+                  </td>
+                ))}
+              </tr>
+            ))}
+            {filteredRows.length === 0 && (
+              <tr>
+                <td colSpan={headers.length} className="px-3 py-6 text-center text-[var(--color-dim)]">
+                  无匹配行
+                </td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+    </div>
   )
 }
