@@ -11,17 +11,19 @@ export function Breadcrumb({ currentPath, onNavigate }: Props) {
   // 超过 4 段时省略中间部分
   const maxVisible = 4
   const shouldCollapse = segments.length > maxVisible
-  const visibleSegments = shouldCollapse
-    ? [...segments.slice(0, 1), '...', ...segments.slice(-2)]
-    : segments
 
-  // 计算每段对应的实际路径
-  const getPath = (displayIdx: number) => {
-    if (!shouldCollapse) return segments.slice(0, displayIdx + 1).join('/')
-    if (displayIdx === 0) return segments.slice(0, 1).join('/')
-    if (displayIdx === 1) return '' // 省略号不可点击
-    const realIdx = segments.length - (visibleSegments.length - 1 - displayIdx)
-    return segments.slice(0, realIdx + 1).join('/')
+  // 折叠时：显示第一段 + ... + 最后两段
+  const visibleParts: Array<{ label: string; path: string | null }> = []
+  if (shouldCollapse) {
+    visibleParts.push({ label: segments[0], path: segments.slice(0, 1).join('/') })
+    visibleParts.push({ label: '...', path: null })
+    for (let i = segments.length - 2; i < segments.length; i++) {
+      visibleParts.push({ label: segments[i], path: segments.slice(0, i + 1).join('/') })
+    }
+  } else {
+    segments.forEach((seg, i) => {
+      visibleParts.push({ label: seg, path: segments.slice(0, i + 1).join('/') })
+    })
   }
 
   return (
@@ -34,26 +36,24 @@ export function Breadcrumb({ currentPath, onNavigate }: Props) {
         <House size={16} weight="bold" />
       </button>
 
-      {visibleSegments.map((seg, i) => {
-        const path = getPath(i)
-        const isLast = i === visibleSegments.length - 1
-        const isEllipsis = seg === '...'
+      {visibleParts.map((part, i) => {
+        const isLast = i === visibleParts.length - 1
 
         return (
-          <span key={`${seg}-${i}`} className="flex items-center gap-1 min-w-0">
+          <span key={`${part.label}-${i}`} className="flex items-center gap-1 min-w-0">
             <CaretRight size={10} className="text-[var(--color-dim)] flex-shrink-0" />
-            {isEllipsis ? (
+            {part.path === null ? (
               <span className="text-xs text-[var(--color-dim)]">…</span>
             ) : isLast ? (
               <span className="font-mono text-xs text-[var(--color-fg)] truncate max-w-[200px]">
-                {seg}
+                {part.label}
               </span>
             ) : (
               <button
-                onClick={() => onNavigate(path, 'back')}
+                onClick={() => onNavigate(part.path!, 'back')}
                 className="font-mono text-xs text-[var(--color-muted)] hover:text-[var(--color-fg)] truncate max-w-[150px] cursor-pointer transition-colors"
               >
-                {seg}
+                {part.label}
               </button>
             )}
           </span>

@@ -127,17 +127,31 @@ export function ChatPage({ currentPath, onSwitchMode, onNavigate, onRefresh }: {
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
 
-  // 输入框内容保留（关闭/刷新时保存，打开时恢复）
-  const inputStorageKey = `chat-input-draft:${currentPath || '/'}`
+  // 输入框内容保留（锁定路径时使用 pinnedPath，避免切换页面导致草稿丢失）
+  const inputStorageKey = `chat-input-draft:${pinContext ? pinnedPath || '/' : currentPath || '/'}`
+  const prevInputStorageKeyRef = useRef(inputStorageKey)
   useEffect(() => {
-    // 恢复草稿
+    const prevKey = prevInputStorageKeyRef.current
+    prevInputStorageKeyRef.current = inputStorageKey
+    // key 没变（锁定状态下切换页面），不做任何处理
+    if (prevKey === inputStorageKey) return
+    // key 变了（未锁定切换页面）：先保存旧草稿，再加载新草稿
+    const el = inputRef.current
+    if (el) {
+      const html = el.innerHTML
+      if (html && html !== '<br>') sessionStorage.setItem(prevKey, html)
+      else sessionStorage.removeItem(prevKey)
+      // 清除输入框
+      el.innerHTML = ''
+      setInputEmpty(true)
+    }
+    // 恢复新路径的草稿
     const draft = sessionStorage.getItem(inputStorageKey)
-    if (draft && inputRef.current && !inputRef.current.innerHTML) {
-      inputRef.current.innerHTML = draft
+    if (draft && el) {
+      el.innerHTML = draft
       setInputEmpty(false)
-      // 光标移到末尾
       const sel = window.getSelection()
-      if (sel) { sel.selectAllChildren(inputRef.current); sel.collapseToEnd() }
+      if (sel) { sel.selectAllChildren(el); sel.collapseToEnd() }
     }
   }, [inputStorageKey])
   // 页面卸载时保存草稿

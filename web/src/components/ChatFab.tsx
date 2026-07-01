@@ -182,20 +182,44 @@ export function ChatFab({ currentPath, onRefresh }: { currentPath: string; onRef
   const fileInputRef = useRef<HTMLInputElement>(null)
   const reducedMotion = useReducedMotion()
 
-  // 输入框内容保留
-  const inputStorageKey = `chat-fab-draft:${currentPath || '/'}`
+  // 输入框内容保留（锁定路径时使用 pinnedPath，避免切换页面导致草稿丢失）
+  const inputStorageKey = `chat-fab-draft:${pinContext ? pinnedPath || '/' : currentPath || '/'}`
+  const prevFabStorageKeyRef = useRef(inputStorageKey)
   useEffect(() => {
-    if (open) {
+    const prevKey = prevFabStorageKeyRef.current
+    prevFabStorageKeyRef.current = inputStorageKey
+    if (!open) return
+    // key 没变（锁定状态下切换页面），不做任何处理
+    if (prevKey === inputStorageKey) {
+      // 首次打开时恢复草稿
       const draft = sessionStorage.getItem(inputStorageKey)
       if (draft && inputRef.current && !inputRef.current.innerHTML) {
         inputRef.current.innerHTML = draft
         setInputEmpty(false)
-        // 光标移到末尾
         setTimeout(() => {
           const sel = window.getSelection()
           if (sel && inputRef.current) { sel.selectAllChildren(inputRef.current); sel.collapseToEnd() }
         }, 0)
       }
+      return
+    }
+    // key 变了（未锁定切换页面）：保存旧草稿，清除，加载新草稿
+    const el = inputRef.current
+    if (el) {
+      const html = el.innerHTML
+      if (html && html !== '<br>') sessionStorage.setItem(prevKey, html)
+      else sessionStorage.removeItem(prevKey)
+      el.innerHTML = ''
+      setInputEmpty(true)
+    }
+    const draft = sessionStorage.getItem(inputStorageKey)
+    if (draft && el) {
+      el.innerHTML = draft
+      setInputEmpty(false)
+      setTimeout(() => {
+        const sel = window.getSelection()
+        if (sel && el) { sel.selectAllChildren(el); sel.collapseToEnd() }
+      }, 0)
     }
   }, [open, inputStorageKey])
   // 关闭时保存草稿
