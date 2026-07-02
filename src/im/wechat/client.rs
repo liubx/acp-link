@@ -739,12 +739,21 @@ impl WechatClient {
         let key_bytes = parse_aes_key(key)?;
 
         let url = format!("{}/download?encrypted_query_param={}", self.cdn_base_url.trim_end_matches('/'), urlencoding::encode(param));
-        let resp = self.http.get(&url).send().await?;
-        if !resp.status().is_success() {
-            anyhow::bail!("CDN 下载失败: HTTP {}", resp.status());
+
+        // 首次尝试，失败后重试一次（微信 CDN 偶尔对并发请求返回错误）
+        let mut last_status = None;
+        for attempt in 0..2 {
+            if attempt > 0 {
+                tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
+            }
+            let resp = self.http.get(&url).send().await?;
+            if resp.status().is_success() {
+                let ciphertext = resp.bytes().await?;
+                return decrypt_aes_ecb(&ciphertext, &key_bytes);
+            }
+            last_status = Some(resp.status());
         }
-        let ciphertext = resp.bytes().await?;
-        decrypt_aes_ecb(&ciphertext, &key_bytes)
+        anyhow::bail!("CDN 下载失败: HTTP {}", last_status.unwrap())
     }
 
     /// 上传媒体到 CDN

@@ -133,85 +133,169 @@ impl WechatChannel {
             let fwd_typing_active = typing_active;
             let fwd_typing_tickets = typing_tickets;
             let fwd = tokio::spawn(async move {
-                // 延迟窗口：收到文字后等 2 秒看有没有附件一起来
-                let mut pending_text: Option<ParsedWechatMessage> = None;
+                // 聚合窗口：收到任何消息后等 2 秒，收集同一用户的文字+附件，
+                // 确保"文字+图片"或"图片+文字"组合能一起送达 link 层
                 let delay = tokio::time::Duration::from_secs(2);
 
+                // 聚合缓冲区
+                struct PendingBatch {
+                    text_msg: Option<ParsedWechatMessage>,
+                    attachment_msgs: Vec<ParsedWechatMessage>,
+                    user_id: String,
+                }
+
+                let mut batch: Option<PendingBatch> = None;
+
                 loop {
-                    let msg = if pending_text.is_some() {
-                        // 有文字待发，带超时等下一条
+                    let msg = if batch.is_some() {
+                        // 有缓冲，带超时等下一条
                         match tokio::time::timeout(delay, inner_rx.recv()).await {
                             Ok(Some(m)) => Some(m),
-                            Ok(None) => break, // channel closed
-                            Err(_) => None,    // 超时，flush pending text
+                            Ok(None) => break,
+                            Err(_) => None, // 超时，flush batch
                         }
                     } else {
                         inner_rx.recv().await
                     };
 
-                    // 超时：flush 之前缓冲的文字消息
-                    if msg.is_none() && pending_text.is_some() {
-                        let text_msg = pending_text.take().unwrap();
-                        process_and_forward(&text_msg, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                    // 超时：flush 当前 batch
+                    if msg.is_none() && batch.is_some() {
+                        let b = batch.take().unwrap();
+                        // 先发附件（存 pending），再发文字（触发处理）
+                        for att in &b.attachment_msgs {
+                            process_and_forward(att, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                        }
+                        if let Some(ref text_msg) = b.text_msg {
+                            // 如果有附件，短暂等待让 link 层先处理附件入队
+                            if !b.attachment_msgs.is_empty() {
+                                tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                            }
+                            process_and_forward(text_msg, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                        }
                         continue;
                     }
 
                     let Some(msg) = msg else { break };
 
                     let is_text = matches!(&msg.content, WechatMessageContent::Text(_));
+                    let msg_user = msg.from_user_id.clone();
 
-                    if is_text {
-                        // 如果之前有缓冲的文字（不同用户或连续文字），先 flush 旧的
-                        if let Some(prev) = pending_text.take() {
-                            process_and_forward(&prev, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
-                        }
-
-                        // 立即发 typing（不等 2 秒聚合结束）
-                        // 在 spawn 前读取所有需要的值，避免 spawn 内的锁等待
-                        let uid = msg.from_user_id.clone();
-                        let cached_ticket = fwd_typing_tickets.read().await.get(&uid).cloned();
-                        if let Some(ticket) = cached_ticket {
-                            // ticket 已缓存：预读 base_url/token，spawn 里零锁调用
-                            let c = fwd_client.clone();
-                            let base_url = c.base_url().await;
-                            let token = c.token().await;
-                            let uid2 = uid.clone();
-                            let ta = fwd_typing_active.clone();
-                            tokio::spawn(async move {
-                                let _ = c.send_typing_direct(&base_url, token.as_deref(), &uid2, &ticket, 1).await;
-                                ta.write().await.insert(uid2, true);
-                            });
-                        } else {
-                            // 首次：需要 HTTP 获取 ticket，然后发 typing
-                            let ct = msg.context_token.clone();
-                            let c = fwd_client.clone();
-                            let uid2 = uid.clone();
-                            let ta = fwd_typing_active.clone();
-                            let tt = fwd_typing_tickets.clone();
-                            tokio::spawn(async move {
-                                match c.get_typing_ticket(&uid2, &ct).await {
-                                    Ok(Some(t)) => {
-                                        tt.write().await.insert(uid2.clone(), t.clone());
-                                        let _ = c.send_typing(&uid2, &t, 1).await;
-                                        ta.write().await.insert(uid2, true);
+                    match &mut batch {
+                        Some(b) if b.user_id == msg_user => {
+                            // 同一用户的后续消息，加入 batch
+                            if is_text {
+                                if b.text_msg.is_some() {
+                                    // 已有文字，flush 旧 batch 再开新的
+                                    let old = batch.take().unwrap();
+                                    for att in &old.attachment_msgs {
+                                        process_and_forward(att, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
                                     }
-                                    _ => {}
+                                    if let Some(ref tm) = old.text_msg {
+                                        if !old.attachment_msgs.is_empty() {
+                                            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                                        }
+                                        process_and_forward(tm, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                                    }
+                                    batch = Some(PendingBatch {
+                                        text_msg: Some(msg.clone()),
+                                        attachment_msgs: vec![],
+                                        user_id: msg_user.clone(),
+                                    });
+                                } else {
+                                    b.text_msg = Some(msg.clone());
                                 }
-                            });
+                            } else {
+                                b.attachment_msgs.push(msg.clone());
+                            }
                         }
+                        Some(_) => {
+                            // 不同用户的消息，flush 旧 batch
+                            let old = batch.take().unwrap();
+                            for att in &old.attachment_msgs {
+                                process_and_forward(att, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                            }
+                            if let Some(ref tm) = old.text_msg {
+                                if !old.attachment_msgs.is_empty() {
+                                    tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                                }
+                                process_and_forward(tm, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                            }
+                            // 开始新 batch
+                            if is_text {
+                                batch = Some(PendingBatch {
+                                    text_msg: Some(msg.clone()),
+                                    attachment_msgs: vec![],
+                                    user_id: msg_user.clone(),
+                                });
+                            } else {
+                                batch = Some(PendingBatch {
+                                    text_msg: None,
+                                    attachment_msgs: vec![msg.clone()],
+                                    user_id: msg_user.clone(),
+                                });
+                            }
+                        }
+                        None => {
+                            // 无缓冲，开始新 batch
+                            if is_text {
+                                // 立即发 typing
+                                let uid = msg.from_user_id.clone();
+                                let cached_ticket = fwd_typing_tickets.read().await.get(&uid).cloned();
+                                if let Some(ticket) = cached_ticket {
+                                    let c = fwd_client.clone();
+                                    let base_url = c.base_url().await;
+                                    let token = c.token().await;
+                                    let uid2 = uid.clone();
+                                    let ta = fwd_typing_active.clone();
+                                    tokio::spawn(async move {
+                                        let _ = c.send_typing_direct(&base_url, token.as_deref(), &uid2, &ticket, 1).await;
+                                        ta.write().await.insert(uid2, true);
+                                    });
+                                } else {
+                                    let ct = msg.context_token.clone();
+                                    let c = fwd_client.clone();
+                                    let uid2 = uid.clone();
+                                    let ta = fwd_typing_active.clone();
+                                    let tt = fwd_typing_tickets.clone();
+                                    tokio::spawn(async move {
+                                        match c.get_typing_ticket(&uid2, &ct).await {
+                                            Ok(Some(t)) => {
+                                                tt.write().await.insert(uid2.clone(), t.clone());
+                                                let _ = c.send_typing(&uid2, &t, 1).await;
+                                                ta.write().await.insert(uid2, true);
+                                            }
+                                            _ => {}
+                                        }
+                                    });
+                                }
 
-                        // 缓冲新文字，等 2 秒看有没有附件跟着
-                        pending_text = Some(msg);
-                    } else {
-                        // 非文字（图片/文件）：先转发它（作为 pending attachment），
-                        // 然后如果有缓冲的文字就继续等（图片到了说明可能还有更多）
-                        process_and_forward(&msg, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                                batch = Some(PendingBatch {
+                                    text_msg: Some(msg.clone()),
+                                    attachment_msgs: vec![],
+                                    user_id: msg_user,
+                                });
+                            } else {
+                                batch = Some(PendingBatch {
+                                    text_msg: None,
+                                    attachment_msgs: vec![msg.clone()],
+                                    user_id: msg_user,
+                                });
+                            }
+                        }
                     }
                 }
 
                 // flush 残留
-                if let Some(text_msg) = pending_text.take() {
-                    process_and_forward(&text_msg, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                if let Some(b) = batch.take() {
+                    for att in &b.attachment_msgs {
+                        process_and_forward(att, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                    }
+                    if let Some(ref tm) = b.text_msg {
+                        if !b.attachment_msgs.is_empty() {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(50)).await;
+                        }
+                        process_and_forward(tm, &fwd_ctx, &fwd_recent, &fwd_id, &fwd_tx).await;
+                    }
                 }
             });
             let result = client.listen(inner_tx).await;
@@ -479,7 +563,6 @@ async fn process_and_forward(
 }
 
 fn convert_message(msg: ParsedWechatMessage) -> ImMessage {
-    let is_text = matches!(&msg.content, WechatMessageContent::Text(_));
     // session_id 为空时 fallback 到 from_user_id
     let effective_session = if msg.session_id.is_empty() {
         msg.from_user_id.clone()
@@ -493,7 +576,8 @@ fn convert_message(msg: ParsedWechatMessage) -> ImMessage {
         sender_id: msg.from_user_id,
         content: convert_content(msg.content),
         timestamp: msg.timestamp_ms / 1000,
-        topic_id: if is_text { Some(effective_session) } else { None },
+        // 所有消息都带 topic_id，确保附件能进入已有 session 的 pending
+        topic_id: Some(effective_session),
     }
 }
 

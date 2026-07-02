@@ -1025,6 +1025,9 @@ async fn append_attachment_blocks(
     pending: &[PendingAttachment],
     blocks: &mut Vec<ContentBlock>,
 ) -> Result<()> {
+    let upload_dir = state.cwd.join(".tmp/uploads");
+    std::fs::create_dir_all(&upload_dir).ok();
+
     for att in pending {
         match att {
             PendingAttachment::Image(img) => {
@@ -1039,27 +1042,52 @@ async fn append_attachment_blocks(
                     data.len(),
                     mime
                 );
-                if img.image_key.contains("encrypt_query_param") {
-                    blocks.push(AcpBridge::text_block(&format!(
-                        "[image_media_key: {}]", img.image_key
-                    )));
+
+                // 缓存到 .tmp/uploads/（与网页聊天上传目录一致）
+                let ext = match mime {
+                    "image/png" => "png",
+                    "image/gif" => "gif",
+                    "image/webp" => "webp",
+                    _ => "jpg",
+                };
+                let hash = format!("{:x}", md5::compute(&data));
+                let cache_name = format!("{hash}.{ext}");
+                let cache_path = upload_dir.join(&cache_name);
+                if let Err(e) = std::fs::write(&cache_path, &data) {
+                    tracing::warn!("缓存图片失败: {e}");
                 }
+
+                // 告知 agent 本地缓存路径（与网页 [attached_file:] 格式一致）
+                blocks.push(AcpBridge::text_block(&format!(
+                    "[attached_file: {} (image.{})]",
+                    cache_path.display(),
+                    ext
+                )));
                 blocks.push(AcpBridge::image_block(&data, mime));
             }
             PendingAttachment::File(file) => {
-                let path = state
-                    .resource_store
-                    .save_resource(
-                        state.channel.as_ref(),
-                        &file.message_id,
-                        &file.file_key,
-                        "file",
-                        &file.file_name,
-                    )
+                let data = state
+                    .channel
+                    .download_resource(&file.message_id, &file.file_key, "file")
                     .await?;
-                let uri = ResourceStore::to_file_uri(&path);
-                let mime = mime_from_filename(&file.file_name);
-                blocks.push(AcpBridge::resource_link_block(&file.file_name, &uri, mime));
+                let safe_name = file.file_name.replace('/', "_").replace('\\', "_");
+                let hash = format!("{:x}", md5::compute(&data));
+                let ext = std::path::Path::new(&safe_name)
+                    .extension()
+                    .and_then(|e| e.to_str())
+                    .unwrap_or("bin");
+                let cache_name = format!("{hash}.{ext}");
+                let cache_path = upload_dir.join(&cache_name);
+                if let Err(e) = std::fs::write(&cache_path, &data) {
+                    tracing::warn!("缓存文件失败: {e}");
+                } else {
+                    tracing::debug!("pending 文件已缓存: {} ({} bytes)", safe_name, data.len());
+                }
+                blocks.push(AcpBridge::text_block(&format!(
+                    "[attached_file: {} ({})]",
+                    cache_path.display(),
+                    safe_name
+                )));
             }
         }
     }
