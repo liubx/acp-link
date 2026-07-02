@@ -622,7 +622,20 @@ impl FeishuClient {
 
                             // 返回文字内容（如果有），否则返回第一张图片
                             if has_text {
-                                MessageContent::Text(merged_text)
+                                let merged_text = replace_at_placeholders(&merged_text, &raw_msg.mentions);
+                                let merged_text = merged_text.trim().to_string();
+                                if merged_text.is_empty() {
+                                    // 文字部分只有 @bot，视为纯图片消息
+                                    if let Some(first_img) = post_images.into_iter().next() {
+                                        MessageContent::Image { image_key: first_img }
+                                    } else {
+                                        continue;
+                                    }
+                                } else if is_feishu_link(&merged_text) {
+                                    MessageContent::Link { url: merged_text }
+                                } else {
+                                    MessageContent::Text(merged_text)
+                                }
                             } else if let Some(first_img) = post_images.into_iter().next() {
                                 MessageContent::Image { image_key: first_img }
                             } else {

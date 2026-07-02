@@ -357,14 +357,21 @@ async fn acquire_thread_lock(state: &SharedState, thread_id: &str) -> (tokio::sy
 
 /// 处理单条 IM 消息：根据是否有 topic 上下文决定新建会话或增量追加
 async fn handle_message(state: Arc<SharedState>, msg: ImMessage) {
-    // 消息去重
+    // 消息去重：使用 message_id + 内容类型标记作为去重 key
+    // 同一条 post 消息会拆分为多条子消息（图片+文字），它们共享 message_id 但类型不同
+    let dedup_key = match &msg.content {
+        ImMessageContent::Text(_) | ImMessageContent::Link { .. } => msg.message_id.clone(),
+        ImMessageContent::Image { image_key } => format!("{}#img:{}", msg.message_id, image_key),
+        ImMessageContent::File { file_key, .. } => format!("{}#file:{}", msg.message_id, file_key),
+        _ => format!("{}#{}", msg.message_id, format_summary(&msg.content)),
+    };
     {
         let mut processed = state.processed_messages.write().await;
-        if processed.contains(&msg.message_id) {
-            tracing::info!("消息去重跳过: {}", msg.message_id);
+        if processed.contains(&dedup_key) {
+            tracing::info!("消息去重跳过: {}", dedup_key);
             return;
         }
-        processed.push_back(msg.message_id.clone());
+        processed.push_back(dedup_key);
         if processed.len() > 1000 {
             processed.pop_front();
         }
