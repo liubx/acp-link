@@ -1,4 +1,5 @@
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
@@ -11,7 +12,7 @@ use agent_client_protocol::{
     SessionNotification, SessionUpdate, TextContent,
 };
 use anyhow::{Context, Result};
-use tokio::sync::{Mutex, mpsc, oneshot};
+use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::config::BackendConfig;
@@ -26,6 +27,7 @@ pub enum StreamEvent {
 }
 
 /// FNV-1a 64 位稳定哈希（跨 Rust 版本和进程重启结果完全一致）
+#[cfg(test)]
 fn stable_hash(s: &str) -> u64 {
     let mut hash: u64 = 14695981039346656037;
     for b in s.bytes() {
@@ -303,6 +305,12 @@ async fn acp_event_loop(
                     }
                     Err(e) => {
                         tracing::error!("[worker-{worker_id}] ACP prompt 失败: {e:?}");
+                        // 连接级错误（dispatch failure）：退出 event loop，触发 worker 重启
+                        let err_str = format!("{e:?}");
+                        if err_str.contains("dispatch failure") {
+                            tracing::error!("[worker-{worker_id}] 检测到连接级错误，退出以触发重启");
+                            break;
+                        }
                     }
                 }
             }
@@ -406,6 +414,10 @@ async fn keepalive_once(tx: &mpsc::Sender<AcpCommand>, cwd: &std::path::Path) ->
 pub struct AcpBridge {
     /// 每个元素对应一个 worker 线程的命令发送端（Mutex 保护以支持重启替换）
     workers: Vec<Arc<Mutex<mpsc::Sender<AcpCommand>>>>,
+    /// routing_key → worker_idx 绑定关系
+    route_map: Arc<RwLock<HashMap<String, usize>>>,
+    /// 下一个分配的 worker 索引（round-robin）
+    next_worker: Arc<std::sync::atomic::AtomicUsize>,
     /// worker 配置，用于崩溃后重启
     config: BackendConfig,
 }
@@ -440,6 +452,8 @@ impl AcpBridge {
 
         let bridge = Self {
             workers,
+            route_map: Arc::new(RwLock::new(HashMap::new())),
+            next_worker: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
             config: config.clone(),
         };
         bridge.spawn_keepalive()?;
@@ -529,13 +543,27 @@ impl AcpBridge {
         Ok(())
     }
 
-    /// 根据 routing key 的稳定 hash 选择 worker 索引
+    /// 根据 routing key 选择 worker 索引
     ///
-    /// 同一 routing key 始终映射到同一个 worker，保证 session 级别的串行一致性；
-    /// 不同 routing key 分散到不同 worker，实现跨会话并行处理。
+    /// 已绑定的 key 回到原 worker（session 亲和性）；
+    /// 新 key 用 round-robin 分配，确保均匀分布。
     fn route_idx(&self, routing_key: &str) -> usize {
-        let idx = stable_hash(routing_key) as usize % self.workers.len();
-        tracing::debug!("路由 key={routing_key} -> worker-{idx}");
+        let pool = self.workers.len();
+
+        // 已有绑定：直接返回
+        if let Some(&idx) = self.route_map.blocking_read().get(routing_key) {
+            if idx < pool {
+                tracing::debug!("路由 key={routing_key} -> worker-{idx} (已绑定)");
+                return idx;
+            }
+        }
+
+        // 新 key：round-robin 分配
+        let idx = self.next_worker.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % pool;
+
+        // 记录绑定
+        self.route_map.blocking_write().insert(routing_key.to_owned(), idx);
+        tracing::debug!("路由 key={routing_key} -> worker-{idx} (新绑定, round-robin)");
         idx
     }
 
@@ -570,6 +598,10 @@ impl AcpBridge {
                             Ok(Ok(Ok(()))) => {}
                         }
                         *guard = new_tx;
+                        // 清除绑定到该 worker 的所有 routing_key（新进程没有旧 session）
+                        self.route_map.blocking_write().retain(|_, v| *v != idx);
+                        // 重新绑定当前 key
+                        self.route_map.blocking_write().insert(routing_key.to_owned(), idx);
                         guard
                             .send(cmd)
                             .await
@@ -699,7 +731,12 @@ mod tests {
                 Arc::new(Mutex::new(tx))
             })
             .collect();
-        AcpBridge { workers, config }
+        AcpBridge {
+            workers,
+            route_map: Arc::new(RwLock::new(HashMap::new())),
+            next_worker: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            config,
+        }
     }
 
     // ── stable_hash ──────────────────────────────────────────────────────────

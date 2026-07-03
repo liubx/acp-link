@@ -583,14 +583,33 @@ async fn stream_acp_reply_prepared(
     reply_message_id: &str,
     blocks: Vec<ContentBlock>,
 ) {
-    match do_stream_prepared(state, routing_key, session_id, reply_message_id, blocks).await {
+    match do_stream_prepared(state, routing_key, session_id, reply_message_id, blocks.clone()).await {
         Ok(()) => {}
         Err(e) => {
-            tracing::error!("流式处理失败: {e}");
-            let _ = state
-                .channel
-                .update_message(reply_message_id, &format!("处理失败: {e}"))
-                .await;
+            let err_str = format!("{e}");
+            if err_str.contains("No session found") || err_str.contains("dispatch failure") {
+                // worker 重启后 session 丢失：清除缓存，重新 load 并重试
+                tracing::warn!("session 丢失或连接错误，重试: {err_str}");
+                state.loaded_sessions.write().await.remove(session_id);
+                // 重新 load session
+                if let Err(e2) = state.bridge.load_session(routing_key, session_id, state.cwd.clone()).await {
+                    tracing::error!("重试 load_session 失败: {e2}");
+                    let _ = state.channel.update_message(reply_message_id, &format!("处理失败: {e}")).await;
+                    return;
+                }
+                state.loaded_sessions.write().await.insert(session_id.to_owned());
+                // 重试 prompt
+                match do_stream_prepared(state, routing_key, session_id, reply_message_id, blocks).await {
+                    Ok(()) => {}
+                    Err(e2) => {
+                        tracing::error!("重试流式处理仍失败: {e2}");
+                        let _ = state.channel.update_message(reply_message_id, &format!("处理失败: {e2}")).await;
+                    }
+                }
+            } else {
+                tracing::error!("流式处理失败: {e}");
+                let _ = state.channel.update_message(reply_message_id, &format!("处理失败: {e}")).await;
+            }
         }
     }
 }
