@@ -12,7 +12,7 @@ use agent_client_protocol::{
     SessionNotification, SessionUpdate, TextContent,
 };
 use anyhow::{Context, Result};
-use tokio::sync::{Mutex, RwLock, mpsc, oneshot};
+use tokio::sync::{Mutex, mpsc, oneshot};
 use tokio_util::compat::{TokioAsyncReadCompatExt, TokioAsyncWriteCompatExt};
 
 use crate::config::BackendConfig;
@@ -27,7 +27,6 @@ pub enum StreamEvent {
 }
 
 /// FNV-1a 64 位稳定哈希（跨 Rust 版本和进程重启结果完全一致）
-#[cfg(test)]
 fn stable_hash(s: &str) -> u64 {
     let mut hash: u64 = 14695981039346656037;
     for b in s.bytes() {
@@ -407,17 +406,18 @@ async fn keepalive_once(tx: &mpsc::Sender<AcpCommand>, cwd: &std::path::Path) ->
 
 /// ACP 桥接：通过 worker 进程池与多个 kiro-cli 进程通信
 ///
-/// 使用 routing key 的稳定 hash 将请求路由到固定的 worker，
-/// 保证同一 thread/session 的请求始终由同一个 kiro-cli 处理。
-/// worker 崩溃时自动重启并重试一次。
+/// 使用 routing key 路由请求到 worker：
+/// - 已有 session 的请求通过 `session_routing` 映射找到之前分配的 worker
+/// - 新 session 优先分配到空闲（非 busy）的 worker，实现负载均衡
+/// - worker 崩溃时自动重启并重试一次
 #[derive(Clone)]
 pub struct AcpBridge {
     /// 每个元素对应一个 worker 线程的命令发送端（Mutex 保护以支持重启替换）
     workers: Vec<Arc<Mutex<mpsc::Sender<AcpCommand>>>>,
-    /// routing_key → worker_idx 绑定关系
-    route_map: Arc<RwLock<HashMap<String, usize>>>,
-    /// 下一个分配的 worker 索引（round-robin）
-    next_worker: Arc<std::sync::atomic::AtomicUsize>,
+    /// 每个 worker 是否正在处理 prompt（用于新会话选空闲 worker）
+    worker_busy: Vec<Arc<std::sync::atomic::AtomicBool>>,
+    /// routing_key → worker_idx 映射（session 绑定到固定 worker）
+    session_routing: Arc<std::sync::RwLock<HashMap<String, usize>>>,
     /// worker 配置，用于崩溃后重启
     config: BackendConfig,
 }
@@ -450,10 +450,14 @@ impl AcpBridge {
             }
         }
 
+        let worker_busy: Vec<_> = (0..pool_size)
+            .map(|_| Arc::new(std::sync::atomic::AtomicBool::new(false)))
+            .collect();
+
         let bridge = Self {
             workers,
-            route_map: Arc::new(RwLock::new(HashMap::new())),
-            next_worker: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            worker_busy,
+            session_routing: Arc::new(std::sync::RwLock::new(HashMap::new())),
             config: config.clone(),
         };
         bridge.spawn_keepalive()?;
@@ -543,27 +547,25 @@ impl AcpBridge {
         Ok(())
     }
 
-    /// 根据 routing key 选择 worker 索引
-    ///
-    /// 已绑定的 key 回到原 worker（session 亲和性）；
-    /// 新 key 用 round-robin 分配，确保均匀分布。
+    /// 路由策略：
+    /// 1. 已有映射：直接返回之前绑定的 worker
+    /// 2. 无映射（新会话）：优先选空闲 worker，都忙则 fallback 到 hash
     fn route_idx(&self, routing_key: &str) -> usize {
-        let pool = self.workers.len();
-
-        // 已有绑定：直接返回
-        if let Some(&idx) = self.route_map.blocking_read().get(routing_key) {
-            if idx < pool {
-                tracing::debug!("路由 key={routing_key} -> worker-{idx} (已绑定)");
-                return idx;
-            }
+        if let Some(&cached) = self.session_routing.read().unwrap().get(routing_key) {
+            tracing::debug!("路由 key={routing_key} -> worker-{cached} (cached)");
+            return cached;
         }
-
-        // 新 key：round-robin 分配
-        let idx = self.next_worker.fetch_add(1, std::sync::atomic::Ordering::Relaxed) % pool;
-
-        // 记录绑定
-        self.route_map.blocking_write().insert(routing_key.to_owned(), idx);
-        tracing::debug!("路由 key={routing_key} -> worker-{idx} (新绑定, round-robin)");
+        // 新会话：找第一个空闲的 worker
+        let free = self.worker_busy.iter().position(|b| {
+            !b.load(std::sync::atomic::Ordering::Relaxed)
+        });
+        let idx = free.unwrap_or_else(|| {
+            // 全忙则 hash 分配
+            stable_hash(routing_key) as usize % self.workers.len()
+        });
+        // 记录映射
+        self.session_routing.write().unwrap().insert(routing_key.to_owned(), idx);
+        tracing::debug!("路由 key={routing_key} -> worker-{idx} (new, free={}", free.is_some());
         idx
     }
 
@@ -598,10 +600,6 @@ impl AcpBridge {
                             Ok(Ok(Ok(()))) => {}
                         }
                         *guard = new_tx;
-                        // 清除绑定到该 worker 的所有 routing_key（新进程没有旧 session）
-                        self.route_map.blocking_write().retain(|_, v| *v != idx);
-                        // 重新绑定当前 key
-                        self.route_map.blocking_write().insert(routing_key.to_owned(), idx);
                         guard
                             .send(cmd)
                             .await
@@ -653,8 +651,12 @@ impl AcpBridge {
         session_id: &str,
         content: Vec<ContentBlock>,
     ) -> Result<mpsc::UnboundedReceiver<StreamEvent>> {
+        let idx = self.route_idx(routing_key);
+        // 标记 worker 为忙
+        self.worker_busy[idx].store(true, std::sync::atomic::Ordering::Relaxed);
+
         let (reply, rx) = oneshot::channel();
-        self.send_cmd(
+        if let Err(e) = self.send_cmd(
             routing_key,
             AcpCommand::Prompt {
                 session_id: session_id.to_owned(),
@@ -662,9 +664,27 @@ impl AcpBridge {
                 reply,
             },
         )
-        .await?;
-        rx.await
-            .map_err(|_| anyhow::anyhow!("ACP 工作线程已退出"))?
+        .await {
+            self.worker_busy[idx].store(false, std::sync::atomic::Ordering::Relaxed);
+            return Err(e);
+        }
+        let chunk_rx = rx.await
+            .map_err(|_| anyhow::anyhow!("ACP 工作线程已退出"))??;
+
+        // 当 chunk_rx 流结束（sender drop）时，自动标记 worker 为空闲
+        let (fwd_tx, fwd_rx) = mpsc::unbounded_channel();
+        let busy_flag = self.worker_busy[idx].clone();
+        tokio::spawn(async move {
+            let mut chunk_rx = chunk_rx;
+            while let Some(evt) = chunk_rx.recv().await {
+                if fwd_tx.send(evt).is_err() {
+                    break;
+                }
+            }
+            busy_flag.store(false, std::sync::atomic::Ordering::Relaxed);
+        });
+
+        Ok(fwd_rx)
     }
 
     /// 取消指定 session 的当前 prompt，通知 agent 停止发起新工具调用
@@ -731,10 +751,13 @@ mod tests {
                 Arc::new(Mutex::new(tx))
             })
             .collect();
+        let worker_busy = (0..pool_size)
+            .map(|_| Arc::new(std::sync::atomic::AtomicBool::new(false)))
+            .collect();
         AcpBridge {
             workers,
-            route_map: Arc::new(RwLock::new(HashMap::new())),
-            next_worker: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            worker_busy,
+            session_routing: Arc::new(std::sync::RwLock::new(HashMap::new())),
             config,
         }
     }
